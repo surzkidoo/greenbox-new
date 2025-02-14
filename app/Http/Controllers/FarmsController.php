@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use App\Models\farmInventory;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Validator;
 
 class FarmsController extends Controller
 {
@@ -37,14 +38,28 @@ class FarmsController extends Controller
     // Store a newly created product
     public function store(Request $request)
     {
-        $validated = $request->validate([
+        $rules = [
             'farm_name' => 'required|string|max:255',
             'farm_capacity' => 'required|integer|max:2048',
             'budget' => 'required|integer',
             'counter' => 'integer',
             'farm_type_id' => 'required|string',
 
-        ]);
+        ];
+           // Create the validator instance
+           $validator = Validator::make($request->all(), $rules);
+
+           if ($validator->fails()) {
+               // Customize the error response for API requests
+               return response()->json([
+                   'status' => 'error',
+                   'message' => 'Validation failed',
+                   'errors' => $validator->errors(),
+               ], 422);
+           }
+
+           $validated = $validator->validated();
+
         $validated['user_id'] = Auth::id();
         $farm = farms::create($validated);
 
@@ -94,7 +109,7 @@ class FarmsController extends Controller
 
             // Query with optional type filter
             $query = farms::with(['task.activity', 'type', 'user', 'inventory'])
-                ->where('status', 'active')
+                ->where('status', 'activated')
                 ->where('user_id', $id);
 
             if (!empty($typeId)) {
@@ -137,13 +152,28 @@ class FarmsController extends Controller
     {
         $farm = farms::findOrFail($id);
 
-        $validated = $request->validate([
+        $rules = [
             'farm_name' => 'string|max:255',
             'farm_capacity' => 'integer|max:2048',
             'budget' => 'integer',
             'counter' => 'integer',
             'farm_type_id' => 'string',
-        ]);
+        ];
+
+           // Create the validator instance
+           $validator = Validator::make($request->all(), $rules);
+
+           if ($validator->fails()) {
+               // Customize the error response for API requests
+               return response()->json([
+                   'status' => 'error',
+                   'message' => 'Validation failed',
+                   'errors' => $validator->errors(),
+               ], 422);
+           }
+
+           $validated = $validator->validated();
+
 
 
         $farm->update($validated);

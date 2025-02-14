@@ -9,6 +9,9 @@ use App\Models\permission;
 use Illuminate\Support\Str;
 use App\Models\notification;
 use Illuminate\Http\Request;
+use App\Mail\PasswordResetMail;
+use App\Services\TwilioService;
+use PhpParser\Node\Stmt\Return_;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use App\Mail\EmailVerificationMail;
@@ -16,6 +19,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use App\Http\Requests\RegisterRequest;
+use Illuminate\Support\Facades\Validator;
 use App\Http\Requests\ResetPasswordRequest;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\ValidationException;
@@ -23,21 +27,26 @@ use Illuminate\Foundation\Auth\EmailVerificationRequest;
 
 class AuthController extends Controller
 {
+
+    protected $twilio;
+
+    public function __construct(TwilioService $twilio)
+    {
+        $this->twilio = $twilio;
+    }
+
     // User registration
-    public function register(Request $request)
+    public function register(RegisterRequest $request):JsonResponse
     {
 
-        Mail::to('abubakarsurzkidoo@gmail.com')->send(new EmailVerificationMail("ASDFGHHJKL"));
+        // $this->twilio->sendSms('+18777804236', 'Your Token is !2327352');
 
-        response()->json([
-            'status' => 'good',
-            'message' => 'sendl',
-        ], 422);
+        DB::beginTransaction();
 
        $checkmail = User::where('email',$request->email)->first();
 
-       if(!$checkmail){
-        response()->json([
+       if($checkmail){
+       return response()->json([
             'status' => 'error',
             'message' => 'User Exist with that email',
         ], 422);
@@ -80,11 +89,12 @@ class AuthController extends Controller
             'balance' => 0,
            ]);
 
-           // Send verification email with the token
-           $verificationUrl = url('/email/verify/' . $verificationToken . '?email=' . urlencode($user->email));
+
+           $verificationUrl = 'https://app.hibgreenbox.com/email/verify/' . $verificationToken . '?email=' . urlencode($user->email);
+
            Mail::to($user->email)->send(new EmailVerificationMail($verificationUrl));
 
-
+        DB::commit();
         // Return success response
         return response()->json([
             'status' => 'success',
@@ -95,6 +105,9 @@ class AuthController extends Controller
 
         public function verifyEmail($token)
     {
+
+        DB::beginTransaction();
+
         // Check if the token exists in the email_verifications table
         $verification = DB::table('email_verifications')->where('token', $token)->first();
 
@@ -140,7 +153,7 @@ class AuthController extends Controller
         ]);
 
 
-
+        DB::commit();
         return response()->json([
             'status' => 'success',
             'message' => 'Email successfully verified.',
@@ -152,11 +165,31 @@ class AuthController extends Controller
     public function login(Request $request): JsonResponse
     {
         // Validate incoming request data
-        $request->validate([
+        $rules = [
             'email' => 'required|string|email',
             'password' => 'required|string',
-            'type' => 'required|string'
-        ]);
+            'type' => 'required|string',
+        ];
+
+        // Define custom error messages (optional)
+        $messages = [
+            'email.required' => 'The email address is required.',
+            'email.email' => 'Please provide a valid email address.',
+            'password.required' => 'The password field is mandatory.',
+            'type.required' => 'The user type is required.',
+        ];
+
+        // Create the validator instance
+        $validator = Validator::make($request->all(), $rules, $messages);
+
+        if ($validator->fails()) {
+            // Customize the error response for API requests
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
 
         $email = $request->input('email');
         $throttleKey = 'login_attempts_' . Str::lower($email);
@@ -186,13 +219,13 @@ class AuthController extends Controller
             $this->logMessage($request, 'security', 'Too many login attempts');
             return response()->json([
                 'status' => 'error',
-                'message' => 'Too many login attempts. Please try again later.'
+                'message' => 'Too many login attempts. Please try again later (5 minutes later).'
             ], 429);
         }
 
         // Attempt login
         if (!Auth::attempt($request->only('email', 'password'))) {
-            RateLimiter::hit($throttleKey, 60); // Lock account for 60 seconds
+            RateLimiter::hit($throttleKey, 300);
             $this->logMessage($request, 'security', 'Failed login attempt: Incorrect credentials');
             return response()->json([
                 'status' => 'error',
@@ -220,9 +253,21 @@ class AuthController extends Controller
     public function sendResetLinkEmail(Request $request): JsonResponse
     {
         // Validate the email input
-        $request->validate([
+        $rules = [
             'email' => 'required|string|email|exists:users,email',
-        ]);
+        ];
+
+          // Create the validator instance
+          $validator = Validator::make($request->all(), $rules);
+
+          if ($validator->fails()) {
+              // Customize the error response for API requests
+              return response()->json([
+                  'status' => 'error',
+                  'message' => 'Validation failed',
+                  'errors' => $validator->errors(),
+              ], 422);
+          }
 
         $user = User::where('email', $request->email)->first();
 
@@ -237,10 +282,8 @@ class AuthController extends Controller
         ]);
 
         // Send password reset link
-        $resetUrl = url('/password/reset/' . $token . '?email=' . urlencode($user->email));
-
-        // Send reset email (you can use a custom mailable here)
-     //   Mail::to($user->email)->send(new PasswordResetMail($resetUrl));
+        $resetUrl = 'https://app.hibgreenbox.com/password/reset/' . $token . '?email=' . urlencode($user->email);
+        Mail::to($user->email)->send(new PasswordResetMail($resetUrl));
 
         return response()->json([
             'status' => 'success',
@@ -252,11 +295,23 @@ class AuthController extends Controller
     public function resetPassword(Request $request): JsonResponse
     {
         // Validate the request data
-        $request->validate([
+        $rules = [
             'email' => 'required|string|email',
             'token' => 'required|string',
             'password' => 'required|string|min:8|confirmed',
-        ]);
+        ];
+
+          // Create the validator instance
+          $validator = Validator::make($request->all(), $rules);
+
+          if ($validator->fails()) {
+              // Customize the error response for API requests
+              return response()->json([
+                  'status' => 'error',
+                  'message' => 'Validation failed',
+                  'errors' => $validator->errors(),
+              ], 422);
+          }
 
         // Check if the token exists in the password resets table
         $resetRecord = DB::table('password_reset_tokens')
@@ -303,7 +358,7 @@ class AuthController extends Controller
         'device_info' => $request->header('User-Agent'), // Capture user agent/device details
         'message' => $message, // Log the action or reason
         'type' => $type, // Type of log (e.g., login, security)
-        'role' => $request->input('type', null), // Role of the user if available
+        'role' => $request->input('type')=='vendor' ? 'user': $request->input('type', null), // Role of the user if available
         'email' => $request->input('email', null), // Email of the user if available
         'user_id' => optional(Auth::user())->id, // Authenticated user ID or null
     ]);

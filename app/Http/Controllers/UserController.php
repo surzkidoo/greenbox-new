@@ -29,6 +29,9 @@ class UserController extends Controller
             $query->where('account_status', $accountStatus);
         }
 
+
+        $query->where('role', 'user'); // Filter only users
+
         // Paginate results for better performance
         $users = $query->paginate(20);
 
@@ -116,7 +119,7 @@ class UserController extends Controller
              ->join('orders', 'order_items.order_id', '=', 'orders.id')
              ->where('orders.user_id', $userId)
              ->where('orders.status', 'completed') // Only count products from completed orders
-             ->sum('order_items.quantity');
+             ->sum('order_items.item_quantity');
 
 
         // Query orders based on user ID and the provided statuses

@@ -25,7 +25,7 @@ return new class extends Migration
             $table->string('city');
             $table->string('ward');
             $table->string('address');
-            $table->enum('status',['pending','rejected','activated','de-activated'])->default('pending');
+            $table->enum('status',['pending','rejected','activated','deacptivated'])->default('pending');
             $table->foreignId('user_id')->constrained();
             $table->timestamps();
         });

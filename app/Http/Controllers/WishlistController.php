@@ -7,6 +7,7 @@ use App\Models\wishlist;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Validator;
 
 class WishlistController extends Controller
 {
@@ -49,9 +50,24 @@ class WishlistController extends Controller
 
     public function store(Request $request)
     {
-        $validated = $request->validate([
+        $rules = [
             'product_id' => 'required|exists:products,id',
-        ]);
+        ];
+
+         // Create the validator instance
+         $validator = Validator::make($request->all(), $rules);
+
+         if ($validator->fails()) {
+             // Customize the error response for API requests
+             return response()->json([
+                 'status' => 'error',
+                 'message' => 'Validation failed',
+                 'errors' => $validator->errors(),
+             ], 422);
+         }
+
+         $validated = $validator->validated();
+
 
         $wishlist = wishlist::updateOrCreate(
             ['user_id' => Auth::id(), 'product_id' => $validated['product_id']]

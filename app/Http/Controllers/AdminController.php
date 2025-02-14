@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Carbon\Carbon;
 use App\Models\User;
+use App\Mail\Templete;
 use App\Models\orderItems;
 use App\Models\permission;
 use Illuminate\Support\Str;
@@ -11,6 +12,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 class AdminController extends Controller
@@ -186,23 +189,36 @@ class AdminController extends Controller
                 ->get(),
 
             'monthly_shippping' => $this->getshipping(),
-
             'monthly_user' => $this->getUserByMonth(),
-
             'revenue_by_current_previous_Week' => $this->revWeek(),
-
-
-
         ];
+
+        response()->json([
+            'status' => 'success',
+            'data' => $data,
+        ], 200);
     }
 
 
     public function addAdminUser(Request $request)
     {
 
-        $request->validate([
+        $rules = [
             'access_type' => 'required|string',
-        ]);
+        ];
+
+           // Create the validator instance
+          $validator = Validator::make($request->all(), $rules);
+
+          if ($validator->fails()) {
+              // Customize the error response for API requests
+              return response()->json([
+                  'status' => 'error',
+                  'message' => 'Validation failed',
+                  'errors' => $validator->errors(),
+              ], 422);
+          }
+
 
         $checkmail = User::where('email', $request->email)->first();
 
@@ -224,10 +240,11 @@ class AdminController extends Controller
             'state' => 'kebbi',
             'lga' => 'birnin kebbi',
             'gender' => 'admin',
+            'role' => 'admin',
             'refer_by' => '001',
             'password' => Hash::make($request->password),
             'account_status' => 'active',
-            'access_type' =>   $request->access,
+            'access_type' =>   $request->access_type,
             'email_verified' => true,
         ]);
 
@@ -242,10 +259,20 @@ class AdminController extends Controller
             $image = $request->file('avatar');
             $imageName = time() . '.' . $image->getClientOriginalExtension();
             $image->move(public_path('images'), $imageName);
+            $user->avatar = 'images/' . $imageName;
+
         }
 
-        $user->avatar = 'images/' . $imageName;
         $user->save();
+
+        Mail::to($request->email)->send(new Templete(
+            'Your Admin account is created! email : '.$request->email . 'password'. $request->password,
+            'Welcome to HiBGreenbox',
+            'Account Created',
+            'Thank you for choosing us!',
+            'Get Started',
+            'https://app.hibgreenbox.com'
+        ));
 
         $access = explode(',', $request->access_type);
         $permissions = permission::whereIn('access_type', $access)->pluck('id');
@@ -278,10 +305,24 @@ class AdminController extends Controller
 
     public function editAdminPermission(Request $request, $userId)
     {
-        $request->validate([
+        $rules = [
             'default' => 'required|boolean',
             'permissions' => 'nullable|string',
-        ]);
+        ];
+
+           // Create the validator instance
+           $validator = Validator::make($request->all(), $rules);
+
+           if ($validator->fails()) {
+               // Customize the error response for API requests
+               return response()->json([
+                   'status' => 'error',
+                   'message' => 'Validation failed',
+                   'errors' => $validator->errors(),
+               ], 422);
+           }
+
+           $validated = $validator->validated();
 
         try {
             // Find the user by ID
@@ -334,6 +375,89 @@ class AdminController extends Controller
             ], 500);
         }
     }
+
+
+        public function startUpData(){
+
+            Permission::create([
+                'name' => 'greenbox management',
+                'access_type' => 'greenbox',
+                'role_for' => 'admin',
+            ]);
+
+            Permission::create([
+                'name' => 'fis management',
+                'access_type' => 'fis',
+                'role_for' => 'admin',
+            ]);
+
+            Permission::create([
+                'name' => 'delete_posts',
+                'access_type' => 'chats',
+                'role_for' => 'admin',
+            ]);
+
+
+            Permission::create([
+                'name' => 'support',
+                'access_type' => 'support',
+                'role_for' => 'admin',
+            ]);
+
+
+            Permission::create([
+                'name' => 'mails',
+                'access_type' => 'mails',
+                'role_for' => 'admin',
+            ]);
+
+            Permission::create([
+                'name' => 'updates',
+                'access_type' => 'updates',
+                'role_for' => 'admin',
+            ]);
+
+
+            Permission::create([
+                'name' => 'user mangement',
+                'access_type' => 'management',
+                'role_for' => 'admin',
+            ]);
+
+            Permission::create([
+                'name' => 'Farm Management',
+                'role_for' => 'user',
+            ]);
+
+            Permission::create([
+                'name' => 'HiB greenpay',
+                'role_for' => 'user',
+            ]);
+
+            Permission::create([
+                'name' => 'Verified Account',
+                'role_for' => 'user',
+            ]);
+
+            Permission::create([
+                'name' => 'Manage Sales',
+                'role_for' => 'user',
+            ]);
+
+            Permission::create([
+                'name' => 'Track Profits and Analytics',
+                'role_for' => 'user',
+            ]);
+
+            Permission::create([
+                'name' => 'Accesibility and to HiB logistics',
+                'role_for' => 'user',
+            ]);
+
+            $user = User::where('id','1')->first();
+            $user->permissions()->attach([1,2,3,4,5,6]);
+
+        }
 
 
 }

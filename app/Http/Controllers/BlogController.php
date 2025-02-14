@@ -7,6 +7,7 @@ use Illuminate\Support\Str;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 
 class BlogController extends Controller
 {
@@ -27,12 +28,26 @@ class BlogController extends Controller
 
     public function store(Request $request)
     {
-        $validated = $request->validate([
+        $rules = [
             'title' => 'required|string|max:255',
             'content' => 'required|string',
             'publish_date' => 'nullable|date',
             'feature_image' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
-        ]);
+        ];
+
+           // Create the validator instance
+          $validator = Validator::make($request->all(), $rules);
+
+          if ($validator->fails()) {
+              // Customize the error response for API requests
+              return response()->json([
+                  'status' => 'error',
+                  'message' => 'Validation failed',
+                  'errors' => $validator->errors(),
+              ], 422);
+          }
+
+          $validated = $validator->validated();
 
         // Generate slug from title
         $validated['slug'] = Str::slug($validated['title'], '-') . "-" .Str::random(4);
@@ -57,25 +72,37 @@ class BlogController extends Controller
         return response()->json(['status' => 'success', 'data' => $blog], 200);
     }
 
-    public function update(Request $request,$slug)
+    public function update(Request $request, $Id)
     {
-        $blog = blog::where('slug', $slug)->first();
+
+        $blog = blog::where('id', $Id)->first();
 
 
         if(!$blog){
             return response()->json(['status' => 'error', 'message'=>'Blog Not Found'], 401);
         }
 
-
-
-        $validated = $request->validate([
+        $rules = [
             'title' => 'nullable|string|max:255',
             'content' => 'nullable|string',
             'status' => 'nullable|string',
             'publish_date' => 'nullable|date',
             'feature_image' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
-        ]);
+        ];
 
+           // Create the validator instance
+           $validator = Validator::make($request->all(), $rules);
+
+           if ($validator->fails()) {
+               // Customize the error response for API requests
+               return response()->json([
+                   'status' => 'error',
+                   'message' => 'Validation failed',
+                   'errors' => $validator->errors(),
+               ], 422);
+           }
+
+           $validated = $validator->validated();
 
 
         // Generate slug from title

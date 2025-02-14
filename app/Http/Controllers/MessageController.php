@@ -7,6 +7,7 @@ use App\Models\message;
 use App\Models\notification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Validator;
 
 class MessageController extends Controller
 {
@@ -53,10 +54,25 @@ class MessageController extends Controller
 
     public function sendMessage(Request $request)
     {
-        $validated = $request->validate([
+        $rules =[
             'receiver_id' => 'required|exists:users,id',
             'message' => 'required|string',
-        ]);
+        ];
+
+           // Create the validator instance
+           $validator = Validator::make($request->all(), $rules);
+
+           if ($validator->fails()) {
+               // Customize the error response for API requests
+               return response()->json([
+                   'status' => 'error',
+                   'message' => 'Validation failed',
+                   'errors' => $validator->errors(),
+               ], 422);
+           }
+
+           $validated = $validator->validated();
+
 
         $message = message::create([
             'sender_id' => Auth::id(),
@@ -92,9 +108,24 @@ class MessageController extends Controller
 
     public function searchContacts(Request $request)
     {
-        $request->validate([
+        $rules = [
             'query' => 'required|string|min:1|max:255',
-        ]);
+        ];
+
+           // Create the validator instance
+           $validator = Validator::make($request->all(), $rules);
+
+           if ($validator->fails()) {
+               // Customize the error response for API requests
+               return response()->json([
+                   'status' => 'error',
+                   'message' => 'Validation failed',
+                   'errors' => $validator->errors(),
+               ], 422);
+           }
+
+           $validated = $validator->validated();
+
 
         $query = $request->query('query');
 

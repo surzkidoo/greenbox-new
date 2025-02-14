@@ -8,25 +8,39 @@ use App\Models\CartItem;
 use Illuminate\Support\Str;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Validator;
 
 class CartController extends Controller
 {
     // Get the current user's cart or guest's cart using session
-    protected function getCart(Request $request)
+    protected   function getCart(Request $request)
     {
-        if ($request->user_id) {
+        if (Auth::check()) {
             // If the user is logged in, get the user's cart or create a new one
             if ($request->session_id) {
 
-                $sessionCart = Cart::where('session_id', $request->session_id)->first();
+                $cart = Cart::where('session_id', $request->session_id)->first();
 
-                if ($sessionCart) {
-                    $sessionCart->update(['user_id' => $request->user_id]);
+                if ($cart) {
+                    $cart->update(['user_id' => $request->user()->id]);
                 }
 
             }
 
-            return Cart::firstOrCreate(['user_id' => $request->user_id]);
+            else{
+                $cart = Cart::where('user_id', $request->user()->id)->first();
+                if (!$cart) {
+                    $session_id = Str::random(12);
+                    $cart = Cart::create([
+                        'user_id' => $request->user()->id,
+                        'session_id' => $session_id
+                    ]);
+                }
+
+            }
+
+
+            return $cart;
 
         } else {
             // If the user is a guest, use the session to track the cart
@@ -43,10 +57,25 @@ class CartController extends Controller
     // Add a product to the cart
     public function addToCart(Request $request)
     {
-        $validated = $request->validate([
+        $rules = [
             'product_id' => 'required|exists:products,id',
             'quantity' => 'required|integer|min:1',
-        ]);
+        ];
+
+
+          // Create the validator instance
+          $validator = Validator::make($request->all(), $rules);
+
+          if ($validator->fails()) {
+              // Customize the error response for API requests
+              return response()->json([
+                  'status' => 'error',
+                  'message' => 'Validation failed',
+                  'errors' => $validator->errors(),
+              ], 422);
+          }
+
+          $validated = $validator->validated();
 
         // Get the current cart
         $cart = $this->getCart($request);
@@ -83,9 +112,23 @@ class CartController extends Controller
     // Update the quantity of a cart item
     public function updateCartItem(Request $request, $cartItemId)
     {
-        $validated = $request->validate([
+        $rules = [
             'quantity' => 'required|integer|min:0',
-        ]);
+        ];
+
+        // Create the validator instance
+        $validator = Validator::make($request->all(), $rules);
+
+        if ($validator->fails()) {
+            // Customize the error response for API requests
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $validated = $validator->validated();
 
         $cartItem = CartItem::findOrFail($cartItemId);
 

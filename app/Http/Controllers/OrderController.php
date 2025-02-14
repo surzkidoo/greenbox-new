@@ -5,7 +5,9 @@ namespace App\Http\Controllers;
 use Log;
 use Carbon\Carbon;
 use App\Models\cart;
+use App\Models\User;
 use App\Models\order;
+use App\Mail\Templete;
 use App\Models\coupon;
 use App\Models\wallet;
 use App\Models\address;
@@ -19,16 +21,35 @@ use App\Models\orderItems;
 use App\Models\trackOrder;
 use Illuminate\Support\Str;
 use App\Models\notification;
-use App\Models\trackShipping;
 use App\Models\vendBusiness;
 use Illuminate\Http\Request;
+use App\Models\trackShipping;
+use App\Services\TwilioService;
 use App\Models\walletTransaction;
+use App\Services\PaystackService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Validator;
 
 class OrderController extends Controller
+
+
 {
+
+    protected $paystackService;
+
+    protected $twilio;
+
+
+    public function __construct(PaystackService $paystackService,TwilioService $twilio)
+    {
+        $this->paystackService = $paystackService;
+        $this->twilio = $twilio;
+
+    }
+
 
     function convertToDouble($value)
     {
@@ -46,11 +67,55 @@ class OrderController extends Controller
         return $value . ' state';
     }
 
-    public function checkout()
+     function getCart(Request $request)
+    {
+        if (Auth::check()) {
+            // If the user is logged in, get the user's cart or create a new one
+            if ($request->session_id) {
+
+                $cart = Cart::where('session_id', $request->session_id)->first();
+
+                if ($cart) {
+                    $cart->update(['user_id' => $request->user()->id]);
+                }
+
+            }
+
+            else{
+                $cart = Cart::where('user_id', $request->user()->id)->first();
+                if (!$cart) {
+                    $session_id = Str::random(12);
+                    $cart = Cart::create([
+                        'user_id' => $request->user()->id,
+                        'session_id' => $session_id
+                    ]);
+                }
+
+            }
+
+
+            return $cart;
+
+        } else {
+            // If the user is a guest, use the session to track the cart
+            if($request->session_id){
+                $session_id = $request->session_id;
+            }else{
+                $session_id = Str::random(12);
+            }
+
+            return Cart::firstOrCreate(['session_id' => $session_id]);
+        }
+    }
+
+    public function checkout(Request $request)
     {
         // Fetch the cart for the user
-        $cart = cart::where('user_id', Auth::id())->first();
+        $cart = $this->getCart($request);
+
         $settings = setting::where('user_id', Auth::id())->first();
+
+
         $useraddress = $settings && $settings->default_shipping ? Address::find($settings->default_shipping) : null;
 
         if (!$cart) {
@@ -64,7 +129,7 @@ class OrderController extends Controller
         }
 
         // Calculate total price and weight
-        $total = $cartItems->sum(fn($item) => $item->product->price * $item->quantity);
+        $total = $cartItems->sum(fn($item) => $item->product->getPrice() * $item->quantity);
         $totalWeight = $cartItems->sum(fn($item) => $item->product->weight * $item->quantity);
 
         // Apply coupon if available
@@ -79,7 +144,7 @@ class OrderController extends Controller
             'user_id' => Auth::id(),
             'sub_total' => $total,
             'weight' => $totalWeight,
-            'coupon_id' => $cart->coupon_id,
+            'coupon_id' => $cart->coupon_id ?? null,
             'status' => 'in-complete',
         ]);
 
@@ -105,12 +170,12 @@ class OrderController extends Controller
                     'product_id' => $item->product_id,
                     'item_quantity' => $item->quantity,
                     'item_weight' => $item->quantity * $item->product->weight,
-                    'price' => $item->product->price * $item->quantity,
+                    'price' => $item->product->getPrice() * $item->quantity,
                     'delivery_fee' => $this->convertToDouble($itemDeliveryData['delivery_fee'] ?? 0),
                     'vendor_commision' => $this->convertToDouble($itemDeliveryData['vendor_fee'] ?? 0),
                     'admin_commision' => $this->convertToDouble($itemDeliveryData['admin_fee'] ?? 0),
                     'insurance' => $this->convertToDouble($itemDeliveryData['insurance_fee'] ?? 0),
-                    'sub_total' => $item->quantity * $item->product->price,
+                    'sub_total' => $item->quantity * $item->product->getPrice(),
                 ]);
             }
             $order->total_shipping_fee = $deliveryFee;
@@ -124,8 +189,8 @@ class OrderController extends Controller
                     'product_id' => $item->product_id,
                     'item_quantity' => $item->quantity,
                     'item_weight' => $item->quantity * $item->product->weight,
-                    'price' => $item->product->price,
-                    'sub_total' => $item->quantity * $item->product->price,
+                    'price' => $item->product->getPrice(),
+                    'sub_total' => $item->quantity * $item->product->getPrice(),
                 ]);
             }
         }
@@ -155,10 +220,10 @@ class OrderController extends Controller
 
     public function placeOrder(Request $request)
     {
-        $validated = $request->validate([
+        $rules = [
             'order_id' => 'required',
             'shipping_type' => 'required',
-            'type' => 'required|default:standard',
+            'type' => 'required',
             'same_billing' => 'required|boolean',
             'landmark_id' => 'nullable|exists:landmarks,id',
             'billing.firstname' => 'nullable|string',
@@ -173,7 +238,21 @@ class OrderController extends Controller
             'payment.status' => 'nullable|string',
             'payment.ref' => 'nullable|string',
             'payment.method' => 'required|in:credit_card,bank_transfer,greenpay',
-        ]);
+        ];
+
+          // Create the validator instance
+          $validator = Validator::make($request->all(), $rules);
+
+          if ($validator->fails()) {
+              // Customize the error response for API requests
+              return response()->json([
+                  'status' => 'error',
+                  'message' => 'Validation failed',
+                  'errors' => $validator->errors(),
+              ], 422);
+          }
+
+        $validated = $validator->validated();
 
         $userId = Auth::user()->id;
         $order = Order::find($request->order_id);
@@ -277,6 +356,7 @@ class OrderController extends Controller
 
                 //notifica product owner about the order
                 $product = Product::find($orderItem->product_id);
+                $phone = vendBusiness::find($product->user_id)->phone;
                 notification::create([
                         'user_id' => $product->user_id,
                         'data' => "Your product '" . $product->name . "' has been purchased. Start preparing for delivery!",
@@ -304,6 +384,7 @@ class OrderController extends Controller
             $status->save();
 
         } else if ($request->payment['method'] === 'credit_card') {
+
             $paystackResponse = Http::withHeaders([
                 'Authorization' => 'Bearer ' . env('PAYSTACK_SECRET_KEY'),
             ])->get("https://api.paystack.co/transaction/verify/" . $request->payment['ref'] . "");
@@ -336,17 +417,26 @@ class OrderController extends Controller
                     $shippingstatus->shipping_id = $shipping->id;
                     $shippingstatus->save();
 
-
-
                     //notifica product owner about the order
 
                     $product = Product::find($orderItem->product_id);
+                    $phone = vendBusiness::find($product->user_id)->phone;
+                    $email = User::find($product->user_id)->email;
+
+
+                    Mail::to($email)->send(new Templete(
+                        'You just sold a '  . $product->name . ' in Hibgreenbox' ,
+                        'You made A Sale',
+                        'You Just Got an Order',
+                        'Thank you for choosing us!',
+                        'Check Order',
+                        'https://greenbox.com'
+                    ));
+
                     notification::create([
                         'user_id' => $product->user_id,
                         'data' => "Your product '" . $product->name . "' has been purchased. Start preparing for delivery!",
                     ]);
-
-
                 }
 
                 //Placed
@@ -373,6 +463,7 @@ class OrderController extends Controller
                 return response()->json(['status' => 'error', 'message' => 'Payment verification failed'], 400);
             }
         } elseif ($request->payment['method'] === 'bank_transfer') {
+
             Payment::create([
                 'order_id' => $order->id,
                 'payment_method' => 'bank_transfer',
@@ -410,11 +501,34 @@ class OrderController extends Controller
 
     public function getShipping(Request $request)
     {
-        $validated = $request->validate([
+        $rules = [
             'express' => 'required|boolean',
             'address_id' => 'required|integer',  // Assuming it's an address ID, not user ID.
             'order_id' => 'required|integer',
-        ]);
+        ];
+
+          // Create the validator instance
+          $validator = Validator::make($request->all(), $rules);
+
+          if ($validator->fails()) {
+              // Customize the error response for API requests
+              return response()->json([
+                  'status' => 'error',
+                  'message' => 'Validation failed',
+                  'errors' => $validator->errors(),
+              ], 422);
+          }
+          $validated = $validator->validated();
+
+
+        $order = Order::find($request->order_id);
+
+        if (!$order) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Order not found'
+            ], 404);
+        }
 
         $order = order::with('Items.product')->findOrFail($validated['order_id']);
 
@@ -449,18 +563,19 @@ class OrderController extends Controller
             //     $address->lga
             // );
 
+
             $itemDeliveryData = $this->getPricing(
                 $this->convertToState($pickupAddress->state),
                 $this->convertToState($address->state),
-                $item->product->weight * $item->quantity,
+                $item->product->weight,
                 $request->express,
                 $pickupAddress->lga,
                 $address->lga
             );
 
 
-            $deliveryFee += $this->convertToDouble($itemDeliveryData['delivery_fee'] ?? 0);
-            //    var_dump($this->convertToDouble($itemDeliveryData['delivery_fee']));
+
+            $deliveryFee +=  $this->convertToDouble($itemDeliveryData['delivery_fee'] ?? 0);
             $item->update([
                 'delivery_fee' => $this->convertToDouble($itemDeliveryData['delivery_fee'] ?? 0),
                 'vendor_commision' => $this->convertToDouble($itemDeliveryData['vendor_fee'] ?? 0),
@@ -500,10 +615,114 @@ class OrderController extends Controller
         ]);
     }
 
+
+     // Admin Approve Payment
+     public function approvePayment($id)
+     {
+         $order = order::find($id);
+
+         if (!$order) {
+            return response()->json(['status' => 'error', 'message' => 'Order not found'], 404);
+        }
+
+         $payment = Payment::where('order_id',$id)->first();
+
+        $payment->payment_status = "completed";
+        $payment->save();
+
+
+        $userEmail = $order->user->email;
+
+        Mail::to($userEmail)->send(new Templete(
+            'Your Payment has been confirm for order '  . $order->id . ' we processing to shipping' ,
+            'Order Confirmed',
+            'Order Confirmation',
+            'Thank you for choosing us!',
+            'Check Order Status',
+            'https://greenbox.com'
+        ));
+
+
+        //  Payment::create([
+        //     'order_id' => $order->id,
+        //     'payment_method' => 'credit_card',
+        //     'payment_status' => 'completed',
+        //     'amount' =>   $amount,
+        //     'transaction_id' =>  $request->payment['ref']
+        // ]);
+
+        //Items Delivery settings
+        foreach ($order->items as $orderItem) {
+            $shipping = new shipping();
+            $shipping->order_item_id = $orderItem->id;
+            $shipping->tracking_number = "PY-" . $this->generateUniqueCode();
+            $shipping->shipped_date = null;
+            $shipping->delivery_date =  null;
+            $shipping->status = 'pending';
+            $shipping->save();
+
+
+            $shippingstatus = new  trackShipping();
+            $shippingstatus->status = 'pending';
+            $shippingstatus->date = Carbon::now();
+            $shippingstatus->shipping_id = $shipping->id;
+            $shippingstatus->save();
+
+            //notifica product owner about the order
+
+            $product = Product::find($orderItem->product_id);
+            $phone = vendBusiness::find($product->user_id)->phone;
+            $email = User::find($product->user_id)->email;
+
+
+            Mail::to($email)->send(new Templete(
+                'You just sold a '  . $product->name . '  in Hibgreenbox' ,
+                'You made A Sale',
+                'You Just Got an Order',
+                'Thank you for choosing us!',
+                'Check Order',
+                'https://greenbox.com'
+            ));
+
+
+            notification::create([
+                'user_id' => $product->user_id,
+                'data' => "Your product '" . $product->name . "' has been purchased. Start preparing for delivery!",
+            ]);
+        }
+
+        //Placed
+        $status = new  trackOrder();
+        $status->status = 'order placed';
+        $status->date = Carbon::now();
+        $status->order_id = $order->id;
+        $status->save();
+
+        //Placed
+        $status = new  trackOrder();
+        $status->status = 'pending confirmation';
+        $status->date = Carbon::now();
+        $status->order_id = $order->id;
+        $status->save();
+
+        $status = new  trackOrder();
+        $status->status = 'on delivery';
+        $status->date = Carbon::now();
+        $status->order_id = $order->id;
+        $status->save();
+
+
+         return response()->json([
+             'status' => 'success',
+             'order' => $order,
+         ]);
+     }
+
+
     // List all orders for a user
     public function listOrders(Request $request)
     {
-        $statuses = $request->query('status', ['pending', 'completed', 'on_delivery', 'delivered', 'canceled']);
+        $statuses = $request->query('status', ['pending', 'in-complete', 'completed', 'on_delivery', 'delivered', 'canceled']);
 
         // Ensure statuses are always an array
         $statuses = is_array($statuses) ? $statuses : explode(',', $statuses);
@@ -622,7 +841,7 @@ class OrderController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'orders' => $orders,
+            'data' => $orders,
         ]);
     }
 
@@ -651,13 +870,18 @@ class OrderController extends Controller
             $weightTier = $this->getWeightTier2($weightKg);
 
             // Check if both pickup and destination states are the same
-            if ($stateFrom === $stateTo) {
+            if ($stateFrom == $stateTo) {
+
                 $distance = $this->getDistance($stateFrom, $stateTo, $lgfrom, $lgto);
 
+
                 if ($distance <= 50) {
-                    $distanceBand = $this->getWeightTier3($weightKg);
+                    $weightTier = $this->getWeightTier3($weightTier);
+                    $distanceBand = "1 - 50 km (In city)";
                 } else {
-                    $distanceBand = $this->getWeightTier2($weightKg);
+                    $weightTier = $this->getWeightTier2($weightKg);
+                    $distanceBand = "1 - 99 km";
+
                 }
 
                 return $this->fetchPricing('incity', $distanceBand,'to', $weightTier, $express);
@@ -684,18 +908,29 @@ class OrderController extends Controller
     {
         $apiKey = env('GOOGLE_MAPS_API_KEY'); // Ensure the key is set in .env
 
-        $response = Http::get('https://maps.googleapis.com/maps/api/distancematrix/json', [
+        $response = Http::withOptions([
+            'verify' => false
+        ])->get('https://maps.googleapis.com/maps/api/distancematrix/json', [
             'origins' => $lgfrom . ", " . $stateFrom,
-            'destinations' => $lgto . ", " . $stateTo,
+               'destinations' => $lgto . ", " . $stateTo,
             'key' => $apiKey,
         ]);
+
+
+        // $response = Http::get('https://maps.googleapis.com/maps/api/distancematrix/json', [
+        //     'origins' => $lgfrom . ", " . $stateFrom,
+        //     'destinations' => $lgto . ", " . $stateTo,
+        //     'key' => $apiKey,
+        // ]);
+
 
         if ($response->successful()) {
             $data = $response->json();
 
             if (!empty($data['rows'][0]['elements'][0]['distance'])) {
                 $distanceText = $data['rows'][0]['elements'][0]['distance']['text'];
-                return (int) filter_var($distanceText, FILTER_SANITIZE_NUMBER_INT); // Extract distance
+
+                return round((float) filter_var($distanceText, FILTER_SANITIZE_NUMBER_FLOAT, FILTER_FLAG_ALLOW_FRACTION));
             }
         }
 
@@ -710,8 +945,9 @@ class OrderController extends Controller
         $query = DB::table($table)
             ->where('weight_tier_kg', $weightTier);
 
-        if ($table === 'incity') {
+        if ($table == 'incity') {
             $query->whereRaw('LOWER(distance_band_km) = ?', [strtolower($from)]);
+
         } else {
             $query->whereRaw('LOWER(state_from) = ?', [strtolower($from)])
                   ->whereRaw('LOWER(state_to) = ?', [strtolower($to)]);
@@ -719,14 +955,26 @@ class OrderController extends Controller
 
         $pricing = $query->first();
 
+
         if (!$pricing) {
             throw new \Exception("Pricing details not found for the given parameters.");
+        }
+
+
+        if($table== 'incity'){
+            return [
+                'delivery_fee' => $express ? $pricing->Express_Prices_2 : $pricing->Standard_Prices_2,
+                'insurance_fee' => $express ? $pricing->Express_Insurance_4 : $pricing->Standard_Insurance_3,
+                'vendor_fee' => $express ? $pricing->Express_Prices : $pricing->Standard_Prices,
+                'admin_fee' => $pricing->Service_Charges,
+            ];
+
         }
 
         return [
             'delivery_fee' => $express ? $pricing->Express_Prices_2 : $pricing->Standard_Prices_2,
             'insurance_fee' => $express ? $pricing->Express_Insurance_4 : $pricing->Standard_Insurance_3,
-            'vendor_fee' => $express ? $pricing->Express_Prices : $pricing->Standard_Prices,
+            'vendor_fee' => $express ? $pricing->Express_Prices_1 : $pricing->Standard_Prices_1,
             'admin_fee' => $pricing->Service_Charges,
         ];
     }
@@ -788,7 +1036,7 @@ class OrderController extends Controller
         return '52-100';
     }
 
-
+   //next featues
     public function createAndSendOrder(Request $request)
     {
         $validated = $request->validate([
@@ -824,7 +1072,7 @@ class OrderController extends Controller
             // Add order items
             foreach ($validated['items'] as $item) {
                 $product = product::findOrFail($item['product_id']);
-                $subtotal = $product->price * $item['quantity'];
+                $subtotal = $product->getPrice() * $item['quantity'];
                 $total += $subtotal;
 
 
@@ -848,12 +1096,12 @@ class OrderController extends Controller
                     'product_id' => $item->product_id,
                     'item_quantity' => $item['quantity'],
                     'item_weight' => $item->quantity * $item->product->weight,
-                    'price' => $item->product->price * $item['quantity'],
+                    'price' => $item->product->getPrice() * $item['quantity'],
                     'delivery_fee' => $this->convertToDouble($shippingData['delivery_fee'] ?? 0),
                     'vendor_commision' => $this->convertToDouble($shippingData['vendor_fee'] ?? 0),
                     'admin_commision' => $this->convertToDouble($shippingData['admin_fee'] ?? 0),
                     'insurance' => $this->convertToDouble($shippingData['insurance_fee'] ?? 0),
-                    'sub_total' => $item->quantity * $item->product->price,
+                    'sub_total' => $item->quantity * $item->product->getPrice(),
                 ]);
             }
 

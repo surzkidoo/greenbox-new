@@ -6,6 +6,7 @@ use App\Models\Benefit;
 use App\Models\farmTask;
 use App\Models\FarmType;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 
 class BenefitController extends Controller
 {
@@ -19,9 +20,9 @@ class BenefitController extends Controller
     // Store a newly created product
     public function store(Request $request)
     {
-        $validated = $request->validate([
+        $rules = [
             // 'farm_name' => 'required|string|max:255',
-            // 'farm_produce' => 'required|string|max:2048',
+            'farm_produce' => 'required|string|max:2048',
             'working_cost' => 'required|string',
             'quantity_required' => 'required|string',
             'unit_price' => 'required|string',
@@ -33,9 +34,23 @@ class BenefitController extends Controller
             'tax' => 'required|string',
             'gross_profit' => 'required|string',
             'net_profit' => 'required|string',
-            'farm_type_id' => 'required|string',
-            // 'farm_type' => 'required|integer',
-        ]);
+            'farm_type_id' => 'required|integer',
+        ];
+
+           // Create the validator instance
+           $validator = Validator::make($request->all(), $rules);
+
+           if ($validator->fails()) {
+               // Customize the error response for API requests
+               return response()->json([
+                   'status' => 'error',
+                   'message' => 'Validation failed',
+                   'errors' => $validator->errors(),
+               ], 422);
+           }
+
+           $validated = $validator->validated();
+
 
 
        $farmtype =   FarmType::where('id',$validated['farm_type_id'])->first();
@@ -43,12 +58,6 @@ class BenefitController extends Controller
        if(!$farmtype){
         return response()->json(['status'=>'error','message' => 'Failed To Create Benefit, Invalid FarmType ID'], 404);
        }
-
-
-    //    $validated['farm_type'] = $farmtype->farm_type;
-       $validated['farm_name'] = $farmtype->farm_name;
-       $validated['farm_produce'] = $farmtype->farm_produce;
-
 
        $benefit = Benefit::create($validated);
 
@@ -67,9 +76,8 @@ class BenefitController extends Controller
     {
         $benefit = Benefit::findOrFail($id);
 
-        $validated = $request->validate([
+        $rules = [
             // 'farm_name' => 'string|max:255',
-            // 'farm_produce' => 'string|max:2048',
             'working_cost' => 'string',
             'quantity_required' => 'string',
             'unit_price' => 'string',
@@ -81,9 +89,24 @@ class BenefitController extends Controller
             'tax' => 'string',
             'gross_profit' => 'string',
             'net_profit' => 'string',
-            'farm_type_id' => 'string',
+            'farm_type_id' => 'integer',
             // 'farm_type' => 'integer',
-        ]);
+        ];
+
+           // Create the validator instance
+           $validator = Validator::make($request->all(), $rules);
+
+           if ($validator->fails()) {
+               // Customize the error response for API requests
+               return response()->json([
+                   'status' => 'error',
+                   'message' => 'Validation failed',
+                   'errors' => $validator->errors(),
+               ], 422);
+           }
+
+           $validated = $validator->validated();
+
 
         $farmtype =   FarmType::where('id',$validated['farm_type_id'])->first();
 
@@ -92,9 +115,6 @@ class BenefitController extends Controller
         }
 
 
-     //    $validated['farm_type'] = $farmtype->farm_type;
-        $validated['farm_name'] = $farmtype->farm_name;
-        $validated['farm_produce'] = $farmtype->farm_produce;
 
 
 

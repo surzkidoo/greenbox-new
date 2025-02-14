@@ -13,11 +13,11 @@ return new class extends Migration
     {
         Schema::create('discounts', function (Blueprint $table) {
             $table->id();
-            $table->decimal('discount')->default(0);
-            $table->decimal('lable')->default(0);
+            $table->decimal('discount', 10, 2)->default(0);
+            $table->string('label')->default(0);
             $table->boolean('percentage')->default(0);
-            $table->decimal('is_active')->default(0);
-            $table->date('discount_valid')->default(now());
+            $table->boolean('is_active')->default(0);
+            $table->date('discount_valid')->nullable();
             $table->timestamps();
         });
     }

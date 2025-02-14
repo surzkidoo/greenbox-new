@@ -29,4 +29,22 @@ class product extends Model
         return $this->hasMany(productImage::class);
     }
 
+
+    public function discounts()
+{
+    return $this->belongsToMany(Discount::class, 'product_discounts');
+}
+
+
+public function getPrice()
+{
+    // If a discounted price is set and less than the original price, return it.
+    if ($this->d_price > 0 && $this->d_price < $this->getPrice()) {
+        return $this->d_price;
+    }
+
+    return $this->getPrice();
+}
+
+
 }

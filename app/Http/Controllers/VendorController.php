@@ -3,17 +3,20 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Models\order;
+use App\Models\product;
 use App\Models\vendBank;
+use App\Models\orderItems;
 use App\Models\vendProduct;
 use App\Models\vendBusiness;
 use Illuminate\Http\Request;
+use App\Models\vendorsettings;
 use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
-use App\Models\order;
-use App\Models\orderItems;
-use App\Models\product;
-use App\Models\vendorsettings;
+use App\Mail\Templete;
+use App\Mail\VendorVerificationMail;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Mail;
 
 class VendorController extends Controller
 {
@@ -83,7 +86,7 @@ class VendorController extends Controller
                     'phone' => $validated['phone'],
                     'office_address' => $validated['office_address'],
                     'website' => $validated['website'],
-                    // 'social' => $validated['social'],
+                    'social' => $validated['social'],
                     'id_type' =>  $validated['id_type'],
                     'id_value' => $validated['id_value'],
                     'tin' => $validated['tin'],
@@ -151,7 +154,7 @@ class VendorController extends Controller
             });
         })
         ->where('status', 'delivered') // Only count completed orders
-        ->withSum('items as total_quantity', 'quantity') // Sum quantities of sold items
+        ->withSum('items as total_quantity', 'item_quantity') // Sum quantities of sold items
         ->get()
         ->sum('total_quantity');
 
@@ -161,7 +164,7 @@ class VendorController extends Controller
             ->join('orders', 'order_items.order_id', '=', 'orders.id')
             ->where('products.user_id', $userId) // Filter products owned by the vendor
             ->where('orders.status', 'delivered') // Only include completed orders
-            ->sum(DB::raw('order_items.quantity * order_items.price'));
+            ->sum(DB::raw('order_items.item_quantity * order_items.price'));
 
 
         return response()->json([
@@ -355,6 +358,21 @@ class VendorController extends Controller
             $user->seller_verified = true;
             $user->save();
 
+
+            Mail::to($user->email)->send(new Templete(
+                'Your vendor registration has been approved!',
+                'Welcome to HiBGreenbox',
+                'Vendor Registration Approved',
+                'Thank you for choosing us!',
+                'Start Shipping Now',
+                'https://app.hibgreenbox.com'
+            ));
+
+
+            vendorsettings::create([
+                'user_id'=>$user->id
+            ]);
+
             return response()->json([
                 'status' => 'success',
                 'message' => 'Vendor record activated successfully.',
@@ -379,6 +397,16 @@ class VendorController extends Controller
             $user->seller_verified = false;
             $user->save();
 
+
+            Mail::to($user->email)->send(new Templete(
+                'Your vendor Account has been Disabled!, please contact support for more info on why your account was disabled',
+                'Account Disabled',
+                'Vendor Account Disabled',
+                'Thank you for choosing us!',
+                'Contact Support',
+                'https://greenbox.com/contact'
+            ));
+
             return response()->json([
                 'status' => 'success',
                 'message' => 'Vendor record deactivated successfully.',
@@ -392,6 +420,7 @@ class VendorController extends Controller
     public function getVendorSetting($userId){
 
     $vendorSetting = vendorsettings::where('user_id', $userId)->first();
+
 
     if (!$vendorSetting) {
         return response()->json([

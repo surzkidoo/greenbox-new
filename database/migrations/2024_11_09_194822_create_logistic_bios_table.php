@@ -29,10 +29,10 @@ return new class extends Migration
             $table->string("special_handle");
             $table->string("insurance_coverage");
             $table->string("tracking_capability");
-            $table->string("licenses_image");
-            $table->string("insurance_image");
-            $table->string("terms_conditions_pdf");
-            $table->string("tax_tin");
+            $table->string("licenses_image")->nullable();
+            $table->string("insurance_image")->nullable();
+            $table->string("terms_conditions_pdf")->nullable();
+            $table->string("tax_tin")->nullable();
             $table->string("pricing_structure");
             $table->string("payment_method");
             $table->string("service_level_agreement");

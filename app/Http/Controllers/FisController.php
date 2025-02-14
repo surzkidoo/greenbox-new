@@ -11,11 +11,20 @@ use App\Models\fis_nextkind;
 use App\Models\notification;
 use Illuminate\Http\Request;
 use App\Models\fis_guarantor;
+use App\Services\TwilioService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Validator;
 
 class FisController extends Controller
 {
+    protected $twilio;
+
+    public function __construct(TwilioService $twilio)
+    {
+        $this->twilio = $twilio;
+    }
+
 
     public function getAllFisRecords(Request $request)
     {
@@ -51,9 +60,9 @@ class FisController extends Controller
 
         $fisUser = User::whereHas('fisBio')->count();
 
-          $fisUserpending = User::whereHas('fisBio', function ($query) {
-        $query->where('status', 'pending');
-          })->count();
+        $fisUserpending = User::whereHas('fisBio', function ($query) {
+            $query->where('status', 'pending');
+        })->count();
 
 
         $fisUserdeactivated = User::whereHas('fisBio', function ($query) {
@@ -64,9 +73,9 @@ class FisController extends Controller
 
 
         return response()->json([
-        'status' => 'success',
+            'status' => 'success',
             'message' => 'Records found',
-            'data' => ['users'=>$users,'all_farmer'=>$fisUser,'all_pending'=>$fisUserpending,'all_deactivated'=>$fisUserdeactivated],
+            'data' => ['users' => $users, 'all_farmer' => $fisUser, 'all_pending' => $fisUserpending, 'all_deactivated' => $fisUserdeactivated],
         ], 200);
     }
 
@@ -115,22 +124,33 @@ class FisController extends Controller
             'next_of_kin_email' => 'required|email|max:255',
             'next_of_kin_phone' => 'required|string|max:100',
             'next_of_kin_res_address' => 'required|string|max:255',
-            'next_of_kin_signature' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
+            'next_of_kin_signature' => 'required|image|mimes:jpeg,png,jpg|max:2048',
         ];
 
-        // Validate the request
-        $validated = $request->validate($validationRules);
+        // Create the validator instance
+        $validator = Validator::make($request->all(), $validationRules);
+
+        if ($validator->fails()) {
+            // Customize the error response for API requests
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $validated = $validator->validated();
 
         if ($request->hasFile('guarantor_signature')) {
             $image = $request->file('guarantor_signature');
-            $imageName = time().'.'.$image->getClientOriginalExtension();
+            $imageName = time() . '.' . $image->getClientOriginalExtension();
             $image->move(public_path('images/fis/gr'), $imageName);
         }
 
         if ($request->hasFile('next_of_kin_signature')) {
-            $image = $request->file('next_of_kin_signature');
-            $imageName2 = time().'.'.$image->getClientOriginalExtension();
-            $image->move(public_path('images/fis/next'), $imageName2);
+            $image2 = $request->file('next_of_kin_signature');
+            $imageName2 = time() . '.' . $image2->getClientOriginalExtension();
+            $image2->move(public_path('images/fis/next'), $imageName2);
         }
 
         DB::beginTransaction();
@@ -195,7 +215,7 @@ class FisController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => 'All records created successfully.',
-                'data'=>[
+                'data' => [
                     'bio' => $bio,
                     'farm' => $farm,
                     'bank' => $bank,
@@ -204,10 +224,9 @@ class FisController extends Controller
                 ]
 
             ], 201);
-
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['status'=>'success','message' =>  'Failed to create records. Please try again.'], 500);
+            return response()->json(['status' => 'error', 'message' =>  'Failed to create records. Please try again.' . $e], 500);
         }
     }
 
@@ -217,7 +236,7 @@ class FisController extends Controller
     {
         $bio = fis_bio::where('user_id', $id)->first();
         if (!$bio) {
-            return response()->json(['status'=>'error','message' => 'Record not found'], 404);
+            return response()->json(['status' => 'error', 'message' => 'Record not found'], 404);
         }
 
         $farm = fis_farm::where('user_id', $id)->first();
@@ -227,7 +246,7 @@ class FisController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'data'=>[
+            'data' => [
                 'bio' => $bio,
                 'farm' => $farm,
                 'bank' => $bank,
@@ -237,13 +256,13 @@ class FisController extends Controller
         ], 200);
     }
 
-     // Get a specific record by user ID
-     public function activateFarmer($id)
-     {
-         $user = User::where('id', $id)->first();
-         if (!$user) {
-             return response()->json(['status'=>'error','message' => 'Record not found'], 404);
-         }
+    // Get a specific record by user ID
+    public function activateFarmer($id)
+    {
+        $user = User::where('id', $id)->first();
+        if (!$user) {
+            return response()->json(['status' => 'error', 'message' => 'Record not found'], 404);
+        }
 
         $user->fis_verified = true;
 
@@ -259,72 +278,81 @@ class FisController extends Controller
 
 
         notification::create([
-            'user_id' =>$user->id,
+            'user_id' => $user->id,
             'data' => "Your Account is Verified as a Farmer",
         ]);
 
-         return response()->json([
-             'status' => 'success',
-             'message' => 'farmer is now verified',
-         ], 200);
-     }
+        //$this->twilio->sendSms($user->phone, "Your Account is Verified as a Farmer"');
 
-      public function deactivateFarmer($userID)
-      {
-          $user = User::where('user_id', $userID)->first();
-          if (!$user) {
-            return response()->json(['status'=>'error','message' => 'Record not found'], 404);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'farmer is now verified',
+        ], 200);
+    }
+
+    public function deactivateFarmer($userID)
+    {
+        $user = User::where('user_id', $userID)->first();
+        if (!$user) {
+            return response()->json(['status' => 'error', 'message' => 'Record not found'], 404);
         }
 
-         $user->fis_verified = false;
+        $user->fis_verified = false;
 
-         $permissions = permission::where('role_for', 'user')->pluck('id');
-         $user->permissions()->detach($permissions);
-         $user->save();
+        $permissions = permission::where('role_for', 'user')->pluck('id');
+        $user->permissions()->detach($permissions);
+        $user->save();
 
-         $bio = fis_bio::where('user_id', $userID)->first();
-         $bio->status = "de-activated";
+        $bio = fis_bio::where('user_id', $userID)->first();
+        $bio->status = "deactivated";
 
-         notification::create([
-            'user_id' =>$user->id,
+        notification::create([
+            'user_id' => $user->id,
             'data' => "Your Fis Account is Deactivated",
         ]);
 
-          return response()->json([
-              'status' => 'success',
-              'message' => 'farmer is now deactivated',
-          ], 200);
-      }
+        // $this->twilio->sendSms($user->phone, 'Your Fis Account is Deactivated');
 
 
-      public function rejectPending($userID)
-      {
-          $user = User::where('user_id', $userID)->first();
-          if (!$user) {
-            return response()->json(['status'=>'error','message' => 'Record not found'], 404);
+        return response()->json([
+            'status' => 'success',
+            'message' => 'farmer is now deactivated',
+        ], 200);
+    }
+
+
+    public function rejectPending($userID)
+    {
+        $user = User::where('user_id', $userID)->first();
+        if (!$user) {
+            return response()->json(['status' => 'error', 'message' => 'Record not found'], 404);
         }
 
 
-         $bio = fis_bio::where('user_id', $userID)->first();
-         $bio->status = "rejected";
+        $bio = fis_bio::where('user_id', $userID)->first();
+        $bio->status = "rejected";
 
-         notification::create([
-            'user_id' =>$user->id,
+        notification::create([
+            'user_id' => $user->id,
             'data' => "Your Fis Account Activation Failed/rejected",
         ]);
 
-          return response()->json([
-              'status' => 'success',
-              'message' => 'farmer is now deactivated',
-          ], 200);
-      }
+
+        // $this->twilio->sendSms($user->phone, 'Your Fis Account Activation Failed/rejected');
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'farmer is now deactivated',
+        ], 200);
+    }
 
     public function updateFisRecord(Request $request, $id)
     {
         // Find the Bio record by user ID
         $bio = fis_bio::where('user_id', $id)->first();
         if (!$bio) {
-            return response()->json(['status'=>'error','message' => 'Record not found'], 404);
+            return response()->json(['status' => 'error', 'message' => 'Record not found'], 404);
         }
 
         // Validation rules
@@ -393,7 +421,7 @@ class FisController extends Controller
                 'city' => $validated['city'] ?? $bio->city,
                 'ward' => $validated['ward'] ?? $bio->ward,
                 'address' => $validated['address'] ?? $bio->address,
-                'status'=>'pending'
+                'status' => 'pending'
             ]);
 
             // Update the Farm record
@@ -459,10 +487,10 @@ class FisController extends Controller
 
             DB::commit();
 
-            return response()->json(['status'=>'success','message' => 'Record updated successfully'], 200);
+            return response()->json(['status' => 'success', 'message' => 'Record updated successfully'], 200);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['status'=>'error','message' => 'Failed to update record.'.$e], 500);
+            return response()->json(['status' => 'error', 'message' => 'Failed to update record.' . $e], 500);
         }
     }
 
@@ -480,10 +508,10 @@ class FisController extends Controller
 
             DB::commit();
 
-            return response()->json(['status'=>'success','message' => 'Record deleted successfully'], 200);
+            return response()->json(['status' => 'success', 'message' => 'Record deleted successfully'], 200);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['status'=>'error','message' => 'Failed to delete record.'.$e], 500);
+            return response()->json(['status' => 'error', 'message' => 'Failed to delete record.' . $e], 500);
         }
     }
 }

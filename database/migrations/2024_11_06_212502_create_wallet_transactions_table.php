@@ -19,6 +19,8 @@ return new class extends Migration
             $table->enum('status', ['pending', 'success', 'failed']);
             $table->enum('transaction_type', ['withdraw', 'deposit', 'refund']);
             $table->date('date');
+            $table->string('transaction')->nullable();
+            $table->string('transaction_id')->nullable();
             $table->foreignId('wallet_id')->constrained();
             $table->timestamps();
         });

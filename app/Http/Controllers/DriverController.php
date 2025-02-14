@@ -7,20 +7,35 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 
 class DriverController extends Controller
 {
     // Create a new driver
     public function store(Request $request): JsonResponse
     {
-        $request->validate([
+        $rules = [
             'name' => 'required|string|max:255',
             'phone' => 'required|string|max:20',
             'email' => 'required|string|email|unique:drivers|max:255',
             'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048', // 2MB max
             'liecense' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048', // 2MB max
             'permit' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048', // 2MB max
-        ]);
+        ];
+
+         // Create the validator instance
+         $validator = Validator::make($request->all(), $rules);
+
+         if ($validator->fails()) {
+             // Customize the error response for API requests
+             return response()->json([
+                 'status' => 'error',
+                 'message' => 'Validation failed',
+                 'errors' => $validator->errors(),
+             ], 422);
+         }
+
+
 
         $driverData = $request->only(['name', 'phone', 'email']);
         $driverData['user_id'] = Auth::id(); // Assign the authenticated user ID
@@ -78,14 +93,28 @@ class DriverController extends Controller
     // Update a driver's information
     public function update(Request $request, $id): JsonResponse
     {
-        $request->validate([
+        $rules = [
               'name' => 'sometimes|string|max:255',
             'phone' => 'sometimes|string|max:20',
             'email' => 'sometimes|string',
             'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048', // 2MB max
             'liecense' => 'nullable|mimes:pdf|max:2048', // 2MB max
             'permit' => 'nullable|mimes:pdf|max:2048', // 2MB max
-        ]);
+        ];
+
+         // Create the validator instance
+         $validator = Validator::make($request->all(), $rules);
+
+         if ($validator->fails()) {
+             // Customize the error response for API requests
+             return response()->json([
+                 'status' => 'error',
+                 'message' => 'Validation failed',
+                 'errors' => $validator->errors(),
+             ], 422);
+         }
+
+
 
         $driver = Driver::find($id);
 

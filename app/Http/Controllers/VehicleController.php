@@ -6,13 +6,14 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 
 class VehicleController extends Controller
 {
     // Store a new vehicle
     public function store(Request $request): JsonResponse
     {
-        $request->validate([
+        $rules = [
             'name' => 'required|string|max:255',
             'plate_number' => 'required|string|max:20|unique:vehicles',
             'capacity' => 'required|string',
@@ -21,7 +22,20 @@ class VehicleController extends Controller
             'model' => 'required|string|max:255',
             'image' => 'nullable|image|mimes:jpg,png,jpeg|max:2048',
             'driver_id' => 'nullable|exists:drivers,id',
-        ]);
+        ];
+
+         // Create the validator instance
+         $validator = Validator::make($request->all(), $rules);
+
+         if ($validator->fails()) {
+             // Customize the error response for API requests
+             return response()->json([
+                 'status' => 'error',
+                 'message' => 'Validation failed',
+                 'errors' => $validator->errors(),
+             ], 422);
+         }
+
 
         $vehicleData = $request->only(['name', 'plate_number', 'location', 'capacity', 'model','delivery_type', 'driver_id']);
         $vehicleData['user_id'] = Auth::id();
@@ -51,7 +65,7 @@ class VehicleController extends Controller
     // Update a vehicle
     public function update(Request $request, $id): JsonResponse
     {
-        $request->validate([
+        $rules = [
             'name' => 'sometimes|string|max:255',
             'plate_number' => 'sometimes|string|max:20|unique:vehicles',
             'capacity' => 'sometimes|string',
@@ -60,7 +74,21 @@ class VehicleController extends Controller
             'model' => 'sometimes|string|max:255',
             'image' => 'nullable|image|mimes:jpg,png,jpeg|max:2048',
             'driver_id' => 'nullable|exists:drivers,id'
-        ]);
+        ];
+         // Create the validator instance
+         $validator = Validator::make($request->all(), $rules);
+
+         if ($validator->fails()) {
+             // Customize the error response for API requests
+             return response()->json([
+                 'status' => 'error',
+                 'message' => 'Validation failed',
+                 'errors' => $validator->errors(),
+             ], 422);
+         }
+
+         $validated = $validator->validated();
+
 
         $vehicle = Vehicle::find($id);
 

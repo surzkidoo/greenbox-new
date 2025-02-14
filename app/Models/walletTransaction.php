@@ -12,4 +12,10 @@ class walletTransaction extends Model
 
     protected $guarded = [];
 
+
+    public function wallet()
+    {
+        return $this->belongsTo(wallet::class);
+    }
+
 }

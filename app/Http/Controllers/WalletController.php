@@ -24,6 +24,44 @@ class WalletController extends Controller
         return response()->json(['status' => 'success', 'wallet' => $wallet], 200);
     }
 
+
+    public function getWalletAdmin(Request $request): JsonResponse
+    {
+        $query = WalletTransaction::query();
+
+        $query->with('wallet.user');
+
+        if ($request->has('status')) {
+            $query->where('status', $request->input('status'));
+        }
+
+        if ($request->has('transaction_type')) {
+            $query->where('transaction_type', $request->input('transaction_type'));
+        }
+
+        if ($request->has('start_date') && $request->has('end_date')) {
+            $query->whereBetween('date', [$request->input('start_date'), $request->input('end_date')]);
+        }
+
+
+        if ($request->has('transaction')) {
+            $query->where('transaction', 'like', '%' . $request->input('transaction') . '%');
+        }
+
+        if ($request->has('transaction_id')) {
+            $query->where('transaction_id', $request->input('transaction_id'));
+        }
+
+        $wallets = $query->orderBy('created_at', 'desc')->get();
+
+        if ($wallets->isEmpty()) {
+            return response()->json(['status' => 'error', 'message' => 'No wallets found.'], 404);
+        }
+
+        return response()->json(['status' => 'success', 'transactions' => $wallets], 200);
+
+    }
+
     // Fund wallet using Paystack
     public function fundWallet(Request $request): JsonResponse
     {
@@ -96,7 +134,7 @@ class WalletController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Wallet not found.'], 404);
         }
 
-        $transactions = $wallet->transactions()->orderBy('created_at', 'desc')->get();
+        $transactions = $wallet->transactions()->orderBy('created_at', 'desc')->paginate(50);
 
         return response()->json(['status' => 'success', 'transactions' => $transactions], 200);
     }

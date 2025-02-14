@@ -11,6 +11,7 @@ use App\Models\productCategory;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 
 class ProductController extends Controller
 {
@@ -65,7 +66,7 @@ class ProductController extends Controller
             // Count all items sold (only from completed orders)
             'total_items_sold' => orderItems::join('orders', 'order_items.order_id', '=', 'orders.id')
             ->where('orders.status', 'completed')
-            ->sum('order_items.quantity'),
+            ->sum('order_items.item_quantity'),
             'total_quantity_in_carts' => DB::table('cart_items')->sum('quantity')
         ],
 
@@ -117,7 +118,6 @@ class ProductController extends Controller
 
 
 
-
         // Return JSON response
         return response()->json([
             'status' => 'success',
@@ -126,7 +126,7 @@ class ProductController extends Controller
             // Count all items sold (only from completed orders)
             'total_items_sold' => orderItems::join('orders', 'order_items.order_id', '=', 'orders.id')
             ->where('orders.status', 'completed')
-            ->sum('order_items.quantity'),
+            ->sum('order_items.item_quantity'),
             'total_quantity_in_carts' => DB::table('cart_items')->sum('quantity')
         ],
 
@@ -183,7 +183,7 @@ class ProductController extends Controller
             ->join('products', 'order_items.product_id', '=', 'products.id')
             ->whereIn('products.user_id', $adminIds) // Filter by admins' products
             ->where('orders.status', 'completed')
-            ->sum('order_items.quantity'); // Total items sold for all admins
+            ->sum('order_items.item_quantity'); // Total items sold for all admins
              $totalQuantityInCarts = DB::table('cart_items')
             ->join('products', 'cart_items.product_id', '=', 'products.id')
             ->whereIn('products.user_id', $adminIds) // Filter by admins' products
@@ -208,7 +208,7 @@ class ProductController extends Controller
     // Store a newly created product
     public function store(Request $request)
     {
-        $validated = $request->validate([
+        $rules = [
             'name' => 'required|string|max:255',
             // 'img' => 'required|image|max:2048',
             'price' => 'required|numeric',
@@ -221,7 +221,21 @@ class ProductController extends Controller
             'user_id' => 'required|exists:users,id',
             'product_categories_id' => 'required|exists:product_categories,id',
             'images.*' => 'nullable|image|mimes:jpeg,png,jpg|max:2048', // Multiple images
-        ]);
+        ];
+
+          // Create the validator instance
+          $validator = Validator::make($request->all(), $rules);
+
+          if ($validator->fails()) {
+              // Customize the error response for API requests
+              return response()->json([
+                  'status' => 'error',
+                  'message' => 'Validation failed',
+                  'errors' => $validator->errors(),
+              ], 422);
+          }
+
+          $validated = $validator->validated();
 
         $user = Auth::user();
 
@@ -276,7 +290,7 @@ class ProductController extends Controller
         }
 
 
-        return response()->json(['message' => 'Product created successfully', 'product' => $product], 201);
+        return response()->json(['status'=>'success','message' => 'Product created successfully', 'product' => $product], 201);
     }
 
     // Show a single product
@@ -306,7 +320,7 @@ class ProductController extends Controller
         // Return the products with images
         return response()->json([
             'status' => 'success',
-            'products' => $products,
+            'data' => $products,
         ], 200);
     }
 
@@ -342,7 +356,7 @@ class ProductController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Product not found'], 404);
         }
 
-        $validated = $request->validate([
+        $rules = [
             'name' => 'required|string|max:255',
             'price' => 'required|numeric',
             'd_price' => 'nullable|numeric',
@@ -353,7 +367,22 @@ class ProductController extends Controller
             'availability_type' => 'required|in:stock,unlimited',
             'product_categories_id' => 'required|exists:product_categories,id',
             'images.*' => 'nullable|image|mimes:jpeg,png,jpg|max:2048', // Multiple images
-        ]);
+        ];
+
+
+
+          // Create the validator instance
+          $validator = Validator::make($request->all(), $rules);
+
+          if ($validator->fails()) {
+              // Customize the error response for API requests
+              return response()->json([
+                  'status' => 'error',
+                  'message' => 'Validation failed',
+                  'errors' => $validator->errors(),
+              ], 422);
+          }
+          $validated = $validator->validated();
 
 
         // Update the product details
@@ -402,7 +431,7 @@ class ProductController extends Controller
 
 
 
-        return response()->json(['message' => 'Product updated successfully', 'product' => $product], 200);
+        return response()->json(['status'=>'success','message' => 'Product updated successfully', 'product' => $product], 200);
     }
 
 
@@ -427,7 +456,7 @@ class ProductController extends Controller
 
 
 
-        return response()->json(['message' => 'Product deleted successfully']);
+        return response()->json(['status'=>'success','message' => 'Product deleted successfully']);
     }
 
     public function deactive($id)
@@ -436,7 +465,7 @@ class ProductController extends Controller
         $product->active = false;
         $product->save();
 
-        return response()->json(['message' => 'Product Deactivated successfully']);
+        return response()->json(['status'=>'success','message' => 'Product Deactivated successfully']);
     }
 
 
@@ -446,17 +475,30 @@ class ProductController extends Controller
         $product->active = true;
         $product->save();
 
-        return response()->json(['message' => 'Product Activated successfully']);
+        return response()->json(['status'=>'success','message' => 'Product Activated successfully']);
     }
 
 
 
     public function storeProductCategory(Request $request)
     {
-        $validated = $request->validate([
+        $rules = [
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
-        ]);
+        ];
+
+          // Create the validator instance
+          $validator = Validator::make($request->all(), $rules);
+
+          if ($validator->fails()) {
+              // Customize the error response for API requests
+              return response()->json([
+                  'status' => 'error',
+                  'message' => 'Validation failed',
+                  'errors' => $validator->errors(),
+              ], 422);
+          }
+          $validated = $validator->validated();
 
         $category = productCategory::create($validated);
 
@@ -500,7 +542,7 @@ class ProductController extends Controller
         $category = ProductCategory::find($id);
 
         if (!$category) {
-            return response()->json(['status' => 'error', 'message' => 'Category not found'], 404);
+            return response()->json(['status'=>'success','status' => 'error', 'message' => 'Category not found'], 404);
         }
 
         $category->delete();

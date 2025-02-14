@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\FarmType;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 
 class FarmTypeController extends Controller
 {
@@ -28,12 +29,27 @@ class FarmTypeController extends Controller
     // Store a newly created farm type
     public function store(Request $request)
     {
-        $validated = $request->validate([
+        $rules = [
             'farm_name' => 'required|string|max:255',
             'farm_url' => 'required|image|max:2048',
             'farm_produce' => 'required|string',
             'farm_type' => 'required|in:crop,livestock',
-        ]);
+        ];
+
+           // Create the validator instance
+           $validator = Validator::make($request->all(), $rules);
+
+           if ($validator->fails()) {
+               // Customize the error response for API requests
+               return response()->json([
+                   'status' => 'error',
+                   'message' => 'Validation failed',
+                   'errors' => $validator->errors(),
+               ], 422);
+           }
+
+           $validated = $validator->validated();
+
 
         // Handle image upload
         if ($request->hasFile('farm_url')) {
@@ -59,12 +75,27 @@ class FarmTypeController extends Controller
     {
         $farmType = FarmType::findOrFail($id);
 
-        $validated = $request->validate([
+        $rules = [
             'farm_name' => 'string|max:255',
             'farm_url' => 'image|max:2048',
             'farm_produce' => 'string',
             'farm_type' => 'in:crop,livestock',
-        ]);
+        ];
+
+           // Create the validator instance
+           $validator = Validator::make($request->all(), $rules);
+
+           if ($validator->fails()) {
+               // Customize the error response for API requests
+               return response()->json([
+                   'status' => 'error',
+                   'message' => 'Validation failed',
+                   'errors' => $validator->errors(),
+               ], 422);
+           }
+
+           $validated = $validator->validated();
+
 
         // Handle image upload
         if ($request->hasFile('farm_url')) {

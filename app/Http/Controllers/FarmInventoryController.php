@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\farms;
 use Illuminate\Http\Request;
 use App\Models\farmInventory;
+use Illuminate\Support\Facades\Validator;
 
 class FarmInventoryController extends Controller
 {
@@ -36,10 +37,25 @@ class FarmInventoryController extends Controller
      */
     public function addInventory(Request $request, $farmId)
     {
-        $request->validate([
+        $rules = [
             'counter' => 'required|integer',
             'type' => 'required|in:sold,death,purchase,birth',
-        ]);
+        ];
+
+         // Create the validator instance
+         $validator = Validator::make($request->all(), $rules);
+
+         if ($validator->fails()) {
+             // Customize the error response for API requests
+             return response()->json([
+                 'status' => 'error',
+                 'message' => 'Validation failed',
+                 'errors' => $validator->errors(),
+             ], 422);
+         }
+
+         $validated = $validator->validated();
+
 
         $inventory = farmInventory::where('farm_id', $farmId)->first();
 
@@ -67,10 +83,25 @@ class FarmInventoryController extends Controller
      */
     public function subtractInventory(Request $request, $farmId)
     {
-        $request->validate([
+        $rules =[
             'counter' => 'required|integer',
             'type' => 'required|in:sold,death,purchase,birth',
-        ]);
+        ];
+
+         // Create the validator instance
+         $validator = Validator::make($request->all(), $rules);
+
+         if ($validator->fails()) {
+             // Customize the error response for API requests
+             return response()->json([
+                 'status' => 'error',
+                 'message' => 'Validation failed',
+                 'errors' => $validator->errors(),
+             ], 422);
+         }
+
+         $validated = $validator->validated();
+
 
         $inventory = FarmInventory::where('farm_id', $farmId)->first();
 
@@ -85,7 +116,6 @@ class FarmInventoryController extends Controller
             'message' => 'Inventory updated successfully.',
             'inventory' => $inventory,
             'counter'=> $farm->counter,
-
         ]);
     }
 }

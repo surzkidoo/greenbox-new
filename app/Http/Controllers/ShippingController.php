@@ -4,14 +4,16 @@ namespace App\Http\Controllers;
 
 use Carbon\Carbon;
 use App\Models\wallet;
+use App\Models\product;
 use App\Models\shipping;
 use App\Models\notification;
 use Illuminate\Http\Request;
+use App\Models\Adminsettings;
 use App\Models\trackShipping;
 use App\Models\walletTransaction;
 use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
-use App\Models\Adminsettings;
+use Illuminate\Support\Facades\Validator;
 
 class ShippingController extends Controller
 {
@@ -28,9 +30,24 @@ class ShippingController extends Controller
     // Assign a logistic to a shipping
     public function assignLogistic(Request $request, $id)
     {
-        $validated = $request->validate([
+        $rules = [
             'logistic_id' => 'required|exists:users,id', // Ensure logistic_id exists in users table
-        ]);
+        ];
+
+              // Create the validator instance
+              $validator = Validator::make($request->all(), $rules);
+
+              if ($validator->fails()) {
+                  // Customize the error response for API requests
+                  return response()->json([
+                      'status' => 'error',
+                      'message' => 'Validation failed',
+                      'errors' => $validator->errors(),
+                  ], 422);
+              }
+
+              $validated = $validator->validated();
+
 
         $shipping = shipping::find($id);
 
@@ -67,7 +84,7 @@ class ShippingController extends Controller
 
     public function getSingleShipping($id)
     {
-        $shipping = Shipping::with(['item.product.order','logistic']) // Load related item and product
+        $shipping = Shipping::with(['item.product','item.order','logistic']) // Load related item and product
             ->find($id);
 
         if (!$shipping) {
@@ -80,9 +97,23 @@ class ShippingController extends Controller
     // Change the status of a shipping record
     public function changeStatus(Request $request, $id)
     {
-        $validated = $request->validate([
+        $rules = [
             'status' => 'required|in:pending,delivered,in-transit,delayed,cancelled',
-        ]);
+        ];
+
+         // Create the validator instance
+         $validator = Validator::make($request->all(), $rules);
+
+         if ($validator->fails()) {
+             // Customize the error response for API requests
+             return response()->json([
+                 'status' => 'error',
+                 'message' => 'Validation failed',
+                 'errors' => $validator->errors(),
+             ], 422);
+         }
+
+         $validated = $validator->validated();
 
         $shipping = shipping::with('item')->find($id);
 
@@ -105,7 +136,7 @@ class ShippingController extends Controller
 
 
         //notifica product owner about the order
-        $product = $shipping->item->product_id;
+        $product = product::where('id',$shipping->item->product_id)->first();
         $id = $shipping->item->order->user_id;
 
         Notification::create([
@@ -113,7 +144,7 @@ class ShippingController extends Controller
             'data' => "Your order  '" . $product->name . "' is now " . $validated['status'] . "!",
         ]);
 
-        if($validated['status'] === "delivered"){
+        if($validated['status'] == "delivered"){
 
 
             DB::beginTransaction();
@@ -234,7 +265,7 @@ class ShippingController extends Controller
             ->paginate(10); // Adjust pagination as needed
 
         return response()->json([
-            'status' => 'success',
+            'status' => 'successs',
             'data' => $shippings,
         ]);
     }

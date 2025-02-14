@@ -5,6 +5,7 @@ use DateTime;
 use Carbon\Carbon;
 use App\Models\farmTask;
 use App\Models\farmActivity;
+use App\Models\farms;
 use Illuminate\Http\Request;
 
 class FarmTaskController extends Controller
@@ -83,7 +84,7 @@ class FarmTaskController extends Controller
 //         ], 200);
 //     }
 
-public function startOrCompleteTask(Request $request, $taskId)
+public function startTask(Request $request, $taskId)
 {
     // Find the task by its ID
     $task = FarmTask::with('activity')->find($taskId);
@@ -92,76 +93,101 @@ public function startOrCompleteTask(Request $request, $taskId)
         return response()->json(['status' => 'error', 'message' => 'Task not found'], 404);
     }
 
-    // Handle task starting logic
-    if ($task->status === 'not started') {
-        // Ensure only one task is in progress for the same farm
-        $existingInProgress = FarmTask::where('farm_id', $task->farm_id)
-            ->where('status', 'in progress')
-            ->exists();
-
-        if ($existingInProgress) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Another task is already in progress. Complete it before starting a new one.',
-            ], 400);
-        }
-
-        // Mark this task as in progress
-        $task->status = 'in progress';
-        $startDate = Carbon::now();
-
-        // Add days to the current time based on the duration
-        $expectedEndTime = $startDate->copy()->addDays(intval($task->activity->period));
-        $task->start_date = $startDate;
-        $task->expected_end_time = $expectedEndTime;
-        $task->save();
-
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Task started successfully',
-            'task' => $task,
-        ], 200);
+    if ($task->status !== 'not started') {
+        return response()->json(['status' => 'error', 'message' => 'Task is already in progress or completed.'], 400);
     }
 
-    // Handle task completion logic
-    if ($task->status === 'in progress') {
-        // Mark the task as completed
-        $task->status = 'completed';
-        $task->save();
+    $farmId = $task->farm_id;
+    $currentStep = $task->activity->step;
 
-        $farmId = $task->farm_id;
-        $currentStep = $task->activity->step;
-
-        // Find the next task (next step)
-        $nextTask = FarmTask::where('farm_id', $farmId)
-        ->join('farm_activities', 'farm_activities.id', '=', 'farm_tasks.farm_activities_id')  // Proper join
-        ->where('farm_activities.step', '>', $currentStep)  // Get the next step
-        ->orderBy('farm_activities.step')  // Order by step
+    // Ensure the previous task is completed before starting this one
+    $previousTask = FarmTask::where('farm_id', $farmId)
+        ->whereHas('activity', function ($query) use ($currentStep) {
+            $query->where('step', $currentStep - 1);
+        })
         ->first();
 
-        // If there's a next task, set it to in progress
-        if ($nextTask) {
-            $nextTask->status = 'in progress';
-            $startDate = Carbon::now();
-            $expectedEndTime = $startDate->copy()->addDays(intval($nextTask->activity->period));
-            $nextTask->start_date = $startDate;
-            $nextTask->expected_end_time = $expectedEndTime;
-            $nextTask->save();
-        }
-
+    if ($previousTask && $previousTask->status !== 'completed') {
         return response()->json([
-            'status' => 'success',
-            'message' => 'Task completed successfully',
-            'next_task' => $nextTask ? $nextTask->activity->name : 'All tasks completed',
-        ], 200);
+            'status' => 'error',
+            'message' => 'Complete the previous task before starting this one.',
+        ], 400);
     }
 
-    // Task is already completed or not in a valid state
+    // Ensure only one task is in progress for the same farm
+    $existingInProgress = FarmTask::where('farm_id', $farmId)
+        ->where('status', 'in progress')
+        ->exists();
+
+    if ($existingInProgress) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Another task is already in progress. Complete it before starting a new one.',
+        ], 400);
+    }
+
+    // Start the task
+    $task->status = 'in progress';
+    $task->start_date = Carbon::now();
+    $task->expected_end_time = $task->start_date->copy()->addDays(intval($task->activity->period));
+    $task->save();
+
     return response()->json([
-        'status' => 'error',
-        'message' => 'Task is already completed or cannot be started/completed',
-    ], 400);
+        'status' => 'success',
+        'message' => 'Task started successfully',
+        'task' => $task,
+    ], 200);
 }
+
+public function completeTask(Request $request, $taskId)
+{
+    // Find the task by its ID
+    $task = FarmTask::with('activity')->find($taskId);
+
+    if (!$task) {
+        return response()->json(['status' => 'error', 'message' => 'Task not found'], 404);
+    }
+
+    if ($task->status !== 'in progress') {
+        return response()->json(['status' => 'error', 'message' => 'Task is not in progress or already completed.'], 400);
+    }
+
+    $farmId = $task->farm_id;
+    $currentStep = $task->activity->step;
+
+    // Mark the task as completed
+    $task->status = 'completed';
+    $task->save();
+
+    // Find the next task (the **exact** next step)
+    $nextTask = FarmTask::where('farm_id', $farmId)
+        ->whereHas('activity', function ($query) use ($currentStep) {
+            $query->where('step', $currentStep + 1);
+        })
+        ->first();
+
+    // If there's a next task, set it to in progress
+    if ($nextTask) {
+        $nextTask->status = 'in progress';
+        $nextTask->start_date = Carbon::now();
+        $nextTask->expected_end_time = $nextTask->start_date->copy()->addDays(intval($nextTask->activity->period));
+        $nextTask->save();
+    }else{
+        $farm = farms::where('id',$farmId)->first();
+        $farm->status = "completed";
+        $farm->save();
+    }
+
+    return response()->json([
+        'status' => 'success',
+        'message' => 'Task completed successfully',
+        'next_task' => $nextTask ? $nextTask->activity->name : 'All tasks completed',
+        'completed' => $nextTask ? false : true
+    ], 200);
+}
+
+
+
 
 
     public function getByFarmTask($id)

@@ -31,8 +31,7 @@ use App\Http\Controllers\LogisticBioController;
 use App\Http\Controllers\FarmActivityController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\FarmInventoryController;
-use Illuminate\Foundation\Auth\EmailVerificationRequest;
-
+use App\Http\Controllers\LogMessageController;
 
 //Authentication & Recovery
 Route::post('/register', [AuthController::class, 'register']); // Register user //tested
@@ -61,25 +60,24 @@ Route::get('/states/{state}/lga', [GenericController::class, 'getLgasByState']);
  Route::delete('/cart-item/{cartItemId}', [CartController::class, 'removeCartItem']); //tested
 
 
- Route::get('/products/marketplace', [ProductController::class, 'marketplace']);
+ Route::get('/products/marketplace', [ProductController::class, 'marketplace']); //tested
 
 
 Route::middleware('auth:sanctum')->group(function () {
 
-    Route::get('/users', [UserController::class, 'getUsers']); // Add appropriate middleware
+    Route::get('/users', [UserController::class, 'getUsers']); // Add appropriate middleware //tested
     // Route::get('/user', [UserController::class, 'getUser']); //tested
     Route::get('/user/{userId}', [UserController::class, 'getUser']); //tested
     Route::get('/user/{userId}/products', [UserController::class, 'getProductByUser']); //tested
     // Route::get('/user/{userId}/carts', [UserController::class, 'getCartByUser']);
-    Route::get('/user/{userId}/orders', [UserController::class, 'getOrderByUser']);
+    Route::get('/user/{userId}/orders', [UserController::class, 'getOrderByUser']); //tested
     // Route::get('/user/{userId}/store', [UserController::class, 'getStore']);
-    Route::get('/users/{userId}/shippings', [ShippingController::class, 'GetAllUserShipping']); //tested - logistic user
 
 
     //Blog System
     Route::post('/blogs', [BlogController::class, 'store']); // Create a new blog //tested
     Route::delete('/blogs/{slug}', [BlogController::class, 'destroy']); // Delete a blog by slug //tested
-    Route::patch('/blogs/update/{slug}', [BlogController::class, 'update']); // Update a blog by slug //tested
+    Route::patch('/blogs/update/{Id}', [BlogController::class, 'update']); // Update a blog by slug //tested
 
 
     //Product Category Management
@@ -91,7 +89,7 @@ Route::middleware('auth:sanctum')->group(function () {
     //Product Management
     // Route::apiResource('products', ProductController::class);
     Route::get('/products', [ProductController::class, 'index']); //tested
-    Route::get('/products/greenbox', [ProductController::class, 'greenboxIndex']);
+    Route::get('/products/greenbox', [ProductController::class, 'greenboxIndex']); //tested
     Route::get('/products/{id}', [ProductController::class, 'show']); //tested
     Route::post('/products', [ProductController::class, 'store']); //tested
     Route::put('/products/{id}', [ProductController::class, 'update']); //tested
@@ -107,6 +105,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/coupon/{id}', [CouponController::class, 'update']); // Update a coupon //tested
     Route::delete('/coupon/{id}', [CouponController::class, 'destroy']); // Delete a coupon //tested
     Route::post('/coupon/calculate-discount', [CouponController::class, 'calculateDiscount']); //tested
+    Route::post('/discount/add', [CouponController::class, 'assignDiscountsToProducts']); //tested
+
 
 
     //Farmer Verification System
@@ -116,7 +116,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/fis/reject/{id}', [FisController::class, 'rejectPending']);
     Route::get('/fis/user/{id}', [FisController::class, 'getFisByUserId']); //tested
     Route::get('/fis', [FisController::class, 'getAllFisRecords']); //tested
-    Route::put('/fis/update/{id}', [FisController::class, 'updateFisRecord']);
+    Route::put('/fis/update/{id}', [FisController::class, 'updateFisRecord']); //
     Route::delete('/fis/delete/{id}', [FisController::class, 'deleteFisRecord']);
 
     //Wishlist
@@ -126,15 +126,17 @@ Route::middleware('auth:sanctum')->group(function () {
 
 
     //User's Permissons
-    Route::get('/permissions', [PermissionController::class, 'index']); // Get all permissions
-    Route::post('/permissions', [PermissionController::class, 'store']); // Create a new permission
-    Route::get('/permissions/{id}', [PermissionController::class, 'show']); // Get a specific permission
-    Route::put('/permissions/{id}', [PermissionController::class, 'update']); // Update a specific permission
-    Route::delete('/permissions/{id}', [PermissionController::class, 'destroy']); //Delete permission
-    Route::post('/users/{userId}/permissions/assign', [PermissionController::class, 'assignPermission']); // Assign permission
-    Route::delete('/users/{userId}/permissions/revoke', [PermissionController::class, 'revokePermission']);
-    Route::get('/permissions/admin', [PermissionController::class, 'getAdminPermissions']);
-    Route::get('/permissions/user', [PermissionController::class, 'getUserPermissions']);
+    Route::get('/permissions', [PermissionController::class, 'index']); // Get all permissions //tested
+    Route::post('/permissions', [PermissionController::class, 'store']); // Create a new permission //tested
+    Route::get('/permissions/admin', [PermissionController::class, 'getAdminPermissions']); //tested
+    Route::get('/permissions/user', [PermissionController::class, 'getUserPermissions']); //tested
+    Route::get('/permissions/{id}', [PermissionController::class, 'show']); // Get a specific permission //tested
+    Route::put('/permissions/{id}', [PermissionController::class, 'update']); // Update a specific permission //tested
+    Route::delete('/permissions/{id}', [PermissionController::class, 'destroy']); //Delete permission //tested
+
+    Route::post('/users/{userId}/permissions/assign', [PermissionController::class, 'assignPermission']); // Assign permission //tested
+    Route::delete('/users/{userId}/permissions/revoke', [PermissionController::class, 'revokePermission']); //tested
+
 
     //Notification Route
     Route::post('/notifications', [NotificationController::class, 'create']);
@@ -159,39 +161,43 @@ Route::middleware('auth:sanctum')->group(function () {
     //Message Route
     Route::post('/messages', [MessageController::class, 'sendMessage']); //tested
     Route::get('/contacts', [MessageController::class, 'getActiveContacts']); //tested
-    Route::get('/messages/search-contacts', [MessageController::class, 'searchContacts']);
+    Route::get('/messages/search-contacts', [MessageController::class, 'searchContacts']); //tested
     Route::get('/messages/{userId}', [MessageController::class, 'getMessages']); //tested
-
-
 
 
   //Order Route
     Route::get('/order', [OrderController::class, 'listOrders']); //tetsed
-    Route::get('/order/invoice', [OrderController::class, 'invoiceOrders']);
+    Route::get('/order/invoice', [OrderController::class, 'invoiceOrders']); //
     Route::post('/order/checkout', [OrderController::class, 'checkout']); //tested
     Route::post('/order/add-shipping', [OrderController::class, 'getShipping']); //tested
     Route::post('/order/placement', [OrderController::class, 'placeOrder']); //tested
     Route::get('/order/{id}', [OrderController::class, 'getOrder']); // Get order details by ID //tested
+    Route::get('/order/{id}/approve-transfer-payment', [OrderController::class, 'approvePayment']); // Get order details by ID //tested
+
 
     //Vendor Seller
-    Route::get('/vendor/{userId}/orders', [OrderController::class, 'getOrdersByvendor']); // Get orders for Vendor
+    Route::get('/vendor/{userId}/orders', [OrderController::class, 'getOrdersByvendor']); // Get orders for Vendor  //half-test
     Route::post('/vendor', [VendorController::class, 'createVendorRecord']);//tested
     Route::get('/vendor', [VendorController::class, 'getAllVendors']);//tested
     Route::put('/vendor', [VendorController::class, 'updateVendorRecord']);//tested
+    Route::get('/vendor/{userId}', [VendorController::class, 'getByUserId']);//tested
     Route::delete('/vendor/{userId}', [VendorController::class, 'deleteVendorRecord']);//tested
     Route::post('/vendor/{userId}/activate', [VendorController::class, 'activateVendor']);//tested
     Route::post('/vendor/{userId}/deactivate', [VendorController::class, 'deactivateVendor']);//tested
 
-    Route::get('/vendorsetting', [VendorController::class, 'getVendorSetting']);
-    Route::put('/vendorsetting', [VendorController::class, 'updateVendorSetting']);
+    Route::get('/vendorsetting/{userId}', [VendorController::class, 'getVendorSetting']);//tested
+    Route::put('/vendorsetting/{userId}', [VendorController::class, 'updateVendorSetting']);//tested
 
 
 
     //Wallet Setting
     Route::get('/wallet', [WalletController::class, 'getWallet']); //tested
+    Route::get('/wallet/admin', [WalletController::class, 'getWalletAdmin']); //tested
     Route::post('/wallet/fund', [WalletController::class, 'fundWallet']);
     Route::get('/wallet/paystack-callback', [WalletController::class, 'paystackCallback'])->name('paystack.callback');
     Route::get('/wallet/transactions', [WalletController::class, 'getWalletTransactions']);//tested
+    Route::post('/paystack/webhook', [GenericController::class, 'handleWebhook']);
+
 
 
     //Farm management System
@@ -219,7 +225,7 @@ Route::middleware('auth:sanctum')->group(function () {
      // Delete a specific farm
     Route::delete('/farms/{id}', [FarmsController::class, 'destroy']);//tested
 
-    Route::get('farms/user-farms/{id}', [FarmsController::class, 'userFarms']);
+    Route::get('farms/user-farms/{id}', [FarmsController::class, 'userFarms']); //tested
 
 
     // List all farm activities
@@ -243,7 +249,8 @@ Route::middleware('auth:sanctum')->group(function () {
     // Get all tasks for a specific farm
     Route::get('farm-tasks/farm/{id}', [FarmTaskController::class, 'getByFarmTask']); //tested
     // Start a task
-    Route::post('farm-tasks/{taskId}/start', [FarmTaskController::class, 'startOrCompleteTask']); //tested
+    Route::post('farm-tasks/{taskId}/start', [FarmTaskController::class, 'startTask']); //tested
+    Route::post('farm-tasks/{taskId}/complete', [FarmTaskController::class, 'CompleteTask']); //tested
 
     // Complete a task
    // Route::post('farm-tasks/{taskId}/complete', [FarmTaskController::class, 'completeTask']);
@@ -276,6 +283,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/logistic-bio', [LogisticBioController::class, 'destroy']);
     Route::get('/logistics/pending', [LogisticBioController::class, 'allPending']); //tetsed
     Route::post('/logistics/accept/{userId}', [LogisticBioController::class, 'verifyVendor']); //tested
+    Route::get('/logisics/{userId}/shippings', [ShippingController::class, 'GetAllUserShipping']); //tested - logistic user
 
     // Shipping CRUD Routes
     Route::get('shippings', [ShippingController::class, 'getAllShippings']); // Get all shipping records //tested
@@ -311,11 +319,14 @@ Route::middleware('auth:sanctum')->group(function () {
 
 
         // Route to add a new admin user
-        Route::post('/admin/add', [AdminController::class, 'addAdminUser']);
+        Route::post('/admin/add', [AdminController::class, 'addAdminUser']); //tested
+
         // Route to get all admin users
-        Route::get('admin/users', [AdminController::class, 'getAdminUsers']);
+        Route::get('admin/users', [AdminController::class, 'getAdminUsers']); //tested
         // Route to edit admin user permissions
-        Route::put('/adminpermissions/{userId}', [AdminController::class, 'editAdminPermission']);
+        Route::put('/admin-permissions/{userId}', [AdminController::class, 'editAdminPermission']); //tested
+
+        Route::get('/admin/logs', [LogMessageController::class, 'getLogDetails']); //tested
 
 
 });

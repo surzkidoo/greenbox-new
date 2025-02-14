@@ -5,15 +5,30 @@ namespace App\Http\Controllers;
 use App\Models\notification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Validator;
 
 class NotificationController extends Controller
 {
     // Create a new notification
     public function create(Request $request)
     {
-        $validated = $request->validate([
+        $rules = [
             'data' => 'required|data'
-        ]);
+        ];
+
+         // Create the validator instance
+         $validator = Validator::make($request->all(), $rules);
+
+         if ($validator->fails()) {
+             // Customize the error response for API requests
+             return response()->json([
+                 'status' => 'error',
+                 'message' => 'Validation failed',
+                 'errors' => $validator->errors(),
+             ], 422);
+         }
+
+         $validated = $validator->validated();
 
         $notification = notification::create([
             'user_id' => Auth::id(),

@@ -47,9 +47,12 @@ class PermissionController extends Controller
     {
         $request->validate([
             'name' => 'required|string|unique:permissions,name|max:255',
+            'access_type' => 'nullable|string|max:255',
+            'role_for' => 'required|string|max:255',
+
         ]);
 
-        $permission = permission::create($request->only('name'));
+        $permission = permission::create($request->only(['name','access_type','role_for']));
 
         return response()->json(['status' => 'success', 'data' => $permission], 201);
     }
@@ -67,10 +70,12 @@ class PermissionController extends Controller
         $permission = permission::findOrFail($id);
 
         $request->validate([
-            'name' => 'required|string|unique:permissions,name,' . $permission->id . '|max:255',
+            'name' => 'nullable|string|unique:permissions,name,' . $permission->id . '|max:255',
+            'access_type' => 'nullable|string|max:255',
+            'role_for' => 'nullable|string|max:255'
         ]);
 
-        $permission->update($request->only('name'));
+        $permission->update($request->only(['name','access_type','role_for']));
 
         return response()->json(['status' => 'success', 'data' => $permission], 200);
     }

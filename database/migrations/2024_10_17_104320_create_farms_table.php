@@ -19,7 +19,7 @@ return new class extends Migration
             $table->integer("counter")->default(0);
             $table->string("farm_size")->nullable();
             $table->string("per_plot")->nullable();
-            $table->string("status")->default('pending');
+            $table->string("status")->default('pending'); //pending,rejected,deactivated,active,completed
             $table->foreignId('user_id')->constrained();
             $table->foreignId('farm_type_id')->constrained();
             $table->timestamps();
