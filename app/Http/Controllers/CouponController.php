@@ -129,8 +129,7 @@ class CouponController extends Controller
     {
         $rules = [
             'code' => 'required|string',
-            'amount' => 'nullable|numeric|min:0',
-            'session_id' => 'required'
+            'cart_id' => 'required|exists:carts,id',
         ];
 
           // Create the validator instance
@@ -159,7 +158,10 @@ class CouponController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Used coupon'], 404);
         }
 
-        $cart = cart::where('session_id',$request->session_id)->first();;
+        $cart = cart::where('id', $request->cart_id)->first();
+
+
+
         // Fetch items from the cart
         $cartItems = cartItem::where('cart_id', $cart->id)->get();
         $total = 0;
@@ -175,7 +177,7 @@ class CouponController extends Controller
         $discountAmount = ($coupon->discount / 100) * $total;
         $finalAmount = $total - $discountAmount;
 
-        $cart = cart::where('session_id',$request->session_id)->first();
+        $cart = cart::where('id', $request->cart_id)->first();
 
         if(!$cart){
             return response()->json([

@@ -19,10 +19,17 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Mail;
 
 class VendorController extends Controller
+
 {
+
+
+
         // Create new records for bio, farm, bank, guarantor, and next of kin
         public function createVendorRecord(Request $request)
         {
+         //check if user has vendor record alreaady
+
+
             $validationRules = [
                 // Business fields
                 'name' => 'required|string|max:255',
@@ -61,6 +68,11 @@ class VendorController extends Controller
 
             ];
 
+            $user = User::find(Auth::id());
+            if ($user->vendBusiness()->exists()) {
+                return response()->json(['status' => 'error', 'message' => 'You already have a vendor record.'], 400);
+            }
+
             // Validate the request
             $validated = $request->validate($validationRules);
 
@@ -69,6 +81,7 @@ class VendorController extends Controller
                 $imageName = time().'.'.$image->getClientOriginalExtension();
                 $image->move(public_path('images/vendor/logo'), $imageName);
             }
+
 
 
 
@@ -91,7 +104,7 @@ class VendorController extends Controller
                     'id_value' => $validated['id_value'],
                     'tin' => $validated['tin'],
                     'vat_number' => $validated['vat_number'],
-                    'logo' => $imageName ?? null,
+                    'logo' => $imageName ? 'images/vendor/logo/'.$imageName : null,
                     'user_id' => Auth::id()
                 ]);
 
@@ -241,7 +254,7 @@ class VendorController extends Controller
             'name' => 'nullable|string|max:255',
             'reg_no' => 'nullable|string|max:255',
             'contact_name' => 'nullable|string|max:255',
-            'email' => 'nullable|email|unique:vend_businesses,email,' . $userId . ',user_id',
+            'email' => 'nullable|email',
             'phone' => 'nullable|string|max:20',
             'state' => 'nullable|string',
             'lga' => 'nullable|string',
@@ -259,8 +272,8 @@ class VendorController extends Controller
             'description' => 'nullable|boolean',
             'shipping' => 'nullable|in:independently,hib_logistic',
             'return_policy' => 'nullable|boolean',
-            'shipping_zone' => 'nullable|array',
-            'shipping_zone.*' => 'string|in:abia,adamawa,akwa ibom,anambra,bauchi,bayelsa,benue,borno,cross river,delta,ebonyi,edo,ekiti,enugu,fCT,gombe,imo,jigawa,kaduna,kano,katsina,kebbi,kogi,kwara,lagos,nasarawa,niger,ogun,ondo,osun,oyo,plateau,rivers,sokoto,taraba,yobe,zamfara',
+            'shipping_zone' => 'nullable|string',
+            // 'shipping_zone.*' => 'string|in:abia,adamawa,akwa ibom,anambra,bauchi,bayelsa,benue,borno,cross river,delta,ebonyi,edo,ekiti,enugu,fCT,gombe,imo,jigawa,kaduna,kano,katsina,kebbi,kogi,kwara,lagos,nasarawa,niger,ogun,ondo,osun,oyo,plateau,rivers,sokoto,taraba,yobe,zamfara',
 
             // Bank fields
             'bank_name' => 'nullable|string|max:255',
@@ -350,7 +363,11 @@ class VendorController extends Controller
     {
 
         try {
-            $business = vendBusiness::where('user_id', $userId)->firstOrFail();
+            $business = vendBusiness::where('user_id', $userId)->first();
+
+            if (!$business) {
+                return response()->json(['status' => 'error', 'message' => 'Not A vendor Account'], 404);
+            }
             $business->verify = true;
             $business->save();
 
@@ -359,14 +376,14 @@ class VendorController extends Controller
             $user->save();
 
 
-            Mail::to($user->email)->send(new Templete(
-                'Your vendor registration has been approved!',
-                'Welcome to HiBGreenbox',
-                'Vendor Registration Approved',
-                'Thank you for choosing us!',
-                'Start Shipping Now',
-                'https://app.hibgreenbox.com'
-            ));
+            // Mail::to($user->email)->send(new Templete(
+            //     'Your vendor registration has been approved!',
+            //     'Welcome to HiBGreenbox',
+            //     'Vendor Registration Approved',
+            //     'Thank you for choosing us!',
+            //     'Start Shipping Now',
+            //     'https://app.hibgreenbox.com'
+            // ));
 
 
             vendorsettings::create([
@@ -398,14 +415,14 @@ class VendorController extends Controller
             $user->save();
 
 
-            Mail::to($user->email)->send(new Templete(
-                'Your vendor Account has been Disabled!, please contact support for more info on why your account was disabled',
-                'Account Disabled',
-                'Vendor Account Disabled',
-                'Thank you for choosing us!',
-                'Contact Support',
-                'https://greenbox.com/contact'
-            ));
+            // Mail::to($user->email)->send(new Templete(
+            //     'Your vendor Account has been Disabled!, please contact support for more info on why your account was disabled',
+            //     'Account Disabled',
+            //     'Vendor Account Disabled',
+            //     'Thank you for choosing us!',
+            //     'Contact Support',
+            //     'https://greenbox.com/contact'
+            // ));
 
             return response()->json([
                 'status' => 'success',

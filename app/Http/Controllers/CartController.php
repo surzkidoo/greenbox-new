@@ -2,9 +2,9 @@
 // app/Http/Controllers/CartController.php
 namespace App\Http\Controllers;
 
-use App\Models\Cart;
+use App\Models\cart;
 use App\Models\product;
-use App\Models\CartItem;
+use App\Models\cartItem;
 use Illuminate\Support\Str;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -12,46 +12,24 @@ use Illuminate\Support\Facades\Validator;
 
 class CartController extends Controller
 {
-    // Get the current user's cart or guest's cart using session
-    protected   function getCart(Request $request)
-    {
-        if (Auth::check()) {
-            // If the user is logged in, get the user's cart or create a new one
-            if ($request->session_id) {
+protected function getCart(Request $request)
+{
+    if (!Auth::check()) {
+        return null; // Return null if user is not authenticated
+    }
 
-                $cart = Cart::where('session_id', $request->session_id)->first();
+    // Retrieve the cart by user_id
+    $cart = cart::where('user_id', $request->user()->id)->first();
 
-                if ($cart) {
-                    $cart->update(['user_id' => $request->user()->id]);
-                }
+    // If no cart exists, create a new one
+    if (!$cart) {
+        $cart = cart::create([
+            'user_id' => $request->user()->id,
+        ]);
+    }
 
-            }
+    return $cart;
 
-            else{
-                $cart = Cart::where('user_id', $request->user()->id)->first();
-                if (!$cart) {
-                    $session_id = Str::random(12);
-                    $cart = Cart::create([
-                        'user_id' => $request->user()->id,
-                        'session_id' => $session_id
-                    ]);
-                }
-
-            }
-
-
-            return $cart;
-
-        } else {
-            // If the user is a guest, use the session to track the cart
-            if($request->session_id){
-                $session_id = $request->session_id;
-            }else{
-                $session_id = Str::random(12);
-            }
-
-            return Cart::firstOrCreate(['session_id' => $session_id]);
-        }
     }
 
     // Add a product to the cart
@@ -81,14 +59,16 @@ class CartController extends Controller
         $cart = $this->getCart($request);
 
         // Check if the product is already in the cart
-        $cartItem = CartItem::firstOrNew([
+        $cartItem = cartItem::firstOrNew([
             'cart_id' => $cart->id,
             'product_id' => $validated['product_id'],
         ]);
 
         $product = product::where('id',$validated['product_id'])->first();
 
-
+        if(boolval($product->available) ==false || boolval($product->active) == false ){
+            return response()->json(['status'=> 'error', 'message' => 'Product is not available for purchase']);
+        }
 
         if($product->stock_available < $validated['quantity'] && $product->availability_type!="unlimited" ){
             return response()->json(['status'=> 'error', 'message' => 'Units unavailable']);
@@ -98,16 +78,21 @@ class CartController extends Controller
         $cartItem->quantity += $validated['quantity'];
         $cartItem->save();
 
-        return response()->json(['status'=> 'success','message' => 'Product added to cart', 'data' => [ 'cart' => $cart->load('items')]]);
+        return response()->json(['status'=> 'success','message' => 'Product added to cart', 'data' => [ 'cart' => $cart->load('items.product.images')]]);
     }
 
-    // Get all cart items
-    public function viewCart(Request $request)
-    {
-        $cart = $this->getCart($request);
+public function viewCart(Request $request)
+{
+    $cart = $this->getCart($request);
 
-        return response()->json(['status'=> 'success','cart' => $cart->with('items.product')->get()]);
+    if (!$cart) {
+        return response()->json(['status' => 'error', 'message' => 'Cart not found']);
     }
+
+    $cart->load('items.product.images'); // Eager load items and their products
+
+    return response()->json(['status' => 'success', 'cart' => $cart]);
+}
 
     // Update the quantity of a cart item
     public function updateCartItem(Request $request, $cartItemId)
@@ -130,11 +115,12 @@ class CartController extends Controller
 
         $validated = $validator->validated();
 
-        $cartItem = CartItem::findOrFail($cartItemId);
+        $cartItem = cartItem::findOrFail($cartItemId);
 
         $product = product::where('id',$cartItem->product_id)->first();
 
         if($product->stock_available < $validated['quantity'] && $product->availability_type!="unlimited" ){
+
             return response()->json(['status'=> 'error', 'message' => 'Units unavailable']);
         }
 
@@ -147,7 +133,7 @@ class CartController extends Controller
     // Remove an item from the cart
     public function removeCartItem($cartItemId)
     {
-        $cartItem = CartItem::findOrFail($cartItemId);
+        $cartItem = cartItem::findOrFail($cartItemId);
         $cartItem->delete();
 
         return response()->json(['status'=> 'success','message' => 'Cart item removed']);

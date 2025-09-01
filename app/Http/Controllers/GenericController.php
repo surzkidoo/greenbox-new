@@ -1,7 +1,11 @@
 <?php
+
 namespace App\Http\Controllers;
 
+use App\Mail\OrderSuccess;
+use App\Mail\Templete;
 use Carbon\Carbon;
+use App\Models\User;
 use App\Models\order;
 use App\Models\wallet;
 use App\Models\payment;
@@ -12,8 +16,13 @@ use App\Models\notification;
 use App\Models\vendBusiness;
 use Illuminate\Http\Request;
 use App\Models\trackShipping;
+use App\Models\subscriptionPlan;
+use App\Models\subscriptionUser;
 use App\Models\walletTransaction;
 use Illuminate\Support\Facades\DB;
+use App\Models\subscriptionPayment;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 
 class GenericController extends Controller
 {
@@ -76,98 +85,203 @@ class GenericController extends Controller
         return response()->json(['status' => 'success', 'data' => $lgas]);
     }
 
+    private function verifyPaystackSignature(Request $request)
+    {
+        $paystackSecretKey = env('PAYSTACK_SECRET_KEY'); // Make sure to set this in your .env file
+
+        $signature = $request->header('x-paystack-signature');
+        $body = $request->getContent();
+
+        // Create a hash using your Paystack secret key and the request body
+        $hash = hash_hmac('sha512', $body, $paystackSecretKey);
+
+        return hash_equals($signature, $hash);
+    }
+
 
     public function handleWebhook(Request $request)
-{
-    $payload = $request->all();
+    {
 
-    // Check if the event is a successful charge
-    if ($payload['event'] === 'charge.success') {
-        $transactionRef = $payload['data']['reference'];
-        $amount = $payload['data']['amount'] / 100;
-        $status = $payload['data']['status']; // 'success' or 'failed'
-        $metadata = $payload['data']['metadata'];
-
-        if ($status !== 'success') {
-            return response()->json(['status' => 'error', 'message' => 'Payment failed'], 400);
+        if (!$this->verifyPaystackSignature($request)) {
+            return response()->json(['message' => 'Invalid signature'], 400);
         }
 
-        // Check if it's a wallet funding or an order payment
-        if ($metadata['payment_type'] === 'wallet') {
 
-            if (walletTransaction::where('transaction_id', $transactionRef)->exists()) {
-                return response()->json(['status' => 'success', 'message' => 'Transaction already processed']);
+        $payload = $request->getContent();
+        $payload = json_decode($payload, true);
+
+
+
+        // Check if the event is a successful charge
+        if ($payload['event'] === 'charge.success') {
+
+            Log::info('Payment successful!', $payload);
+
+            $transactionRef = $payload['data']['reference'];
+            $amount = $payload['data']['amount'] / 100;
+            $status = $payload['data']['status']; // 'success' or 'failed'
+            $metadata = $payload['data']['metadata'];
+
+
+        $customFields = ['custom_fields'] ?? [];
+        $user_id = null;
+        $payment_type = null;
+        $order_id = null;
+
+
+        if (!empty($metadata['custom_fields'])) {
+            if (is_string($metadata['custom_fields'])) {
+                $customFields = json_decode($metadata['custom_fields'], true);
+            } elseif (is_array($metadata['custom_fields'])) {
+                $customFields = $metadata['custom_fields'];
             }
-
-            return $this->handleWalletFunding($metadata['user_id'], $amount, $transactionRef);
-
-        } elseif ($metadata['payment_type'] === 'order') {
-
-            if (payment::where('transaction_id', $transactionRef)->exists()) {
-                return response()->json(['status' => 'success', 'message' => 'Transaction already processed']);
-            }
-
-            return $this->handleOrderPayment($metadata['user_id'], $amount, $transactionRef);
         }
+
+        foreach ($customFields as $field) {
+            if ($field['variable_name'] === 'user_id') {
+                $user_id = $field['value'];
+            }
+            if ($field['variable_name'] === 'payment_type') {
+                $payment_type = $field['value'];
+            }
+
+            if ($field['variable_name'] === 'order_id') {
+                $order_id = $field['value'];
+            }
+
+            if ($field['variable_name'] === 'subscription_id') {
+                $subscriptionId = $field['value'];
+            }
+
+
+        }
+
+
+            if ($status !== 'success') {
+                return response()->json(['status' => 'error', 'message' => 'Payment failed'], 400);
+            }
+
+            // Check if it's a wallet funding or an order payment
+            if ($payment_type === 'wallet') {
+
+                if (walletTransaction::where('transaction_id', $transactionRef)->exists()) {
+                    return response()->json(['status' => 'success', 'message' => 'Transaction already processed']);
+                }
+
+                return $this->handleWalletFunding($user_id, $amount, $transactionRef, $status);
+            } elseif ($payment_type === 'order') {
+
+                if (payment::where('transaction_id', $transactionRef)->exists()) {
+                    return response()->json(['status' => 'success', 'message' => 'Transaction already processed']);
+                }
+
+                return $this->handleOrderPayment($order_id, $amount, $transactionRef, $status);
+
+            } else if ($payment_type === 'subscription') {
+                // Handle subscription payment
+                $subscription = subscriptionPlan::where('id', $subscriptionId)->first();
+                if (!$subscription) {
+                    return response()->json(['status' => 'error', 'message' => 'Subscription plan not found'], 404);
+                }
+                // Create or update the subscription for the user
+                $subscriptionUser = subscriptionUser::updateOrCreate(
+                    ['user_id' => $user_id, 'subscription_plan_id' => $subscription->id],
+                    [
+                        'start_date' => now(),
+                        'end_date' => now()->addDays($subscription->billing_cycle == 'monthly' ? 30 : 365),
+                        'status' => 'active',
+                        'transaction_id' => $transactionRef
+                    ]
+                );
+
+                //delete any previous user subscription with the same plan name with new one
+                subscriptionUser::where('user_id', $user_id)
+                    ->where('subscription_plan_id', $subscription->id)
+                    ->where('id', '!=', $subscriptionUser->id)->where('plan_name', $subscription->plan_name)
+                    ->delete();
+
+                // Log the subscription payment
+                subscriptionPayment::create([
+                    'subscription_user_id' => $subscriptionUser->id,
+                    'amount' => $amount,
+                    'payment_method' => 'paystack',
+                    'transaction_id' => $transactionRef,
+                    'status' => 'success',
+                ]);
+
+                return response()->json(['status' => 'success', 'message' => 'Subscription payment processed']);
+            }
+
+
+        }
+
+        return response()->json(['status' => 'error', 'message' => 'Invalid event'], 400);
     }
 
-    return response()->json(['status' => 'error', 'message' => 'Invalid event'], 400);
-}
 
+    private function handleWalletFunding($userId, $amount, $transactionRef)
+    {
+        // Find the user's wallet
+        $wallet = wallet::where('user_id', $userId)->first();
 
-private function handleWalletFunding($userId, $amount, $transactionRef)
-{
-    // Find the user's wallet
-    $wallet = wallet::where('user_id', $userId)->first();
+        if (!$wallet) {
+            return response()->json(['status' => 'error', 'message' => 'Wallet not found'], 400);
+        }
 
-    if (!$wallet) {
-        return response()->json(['status' => 'error', 'message' => 'Wallet not found'], 400);
-    }
+        // Update wallet balance
+        DB::beginTransaction();
+        $oldBalance = $wallet->balance;
+        $wallet->balance += $amount;
+        $wallet->save();
 
-    // Update wallet balance
-    DB::beginTransaction();
-    $oldBalance = $wallet->balance;
-    $wallet->balance += $amount;
-    $wallet->save();
-
-    // Log the transaction
-    walletTransaction::create([
-        'wallet_id' => $wallet->id,
-        'transaction_id' => $transactionRef,
-        'amount' => $amount,
-        'old_balance' => $oldBalance,
-        'new_balance' => $wallet->balance,
-        'transaction_type' => 'deposit',
-        'status' => 'completed',
-        'date' => now(),
-    ]);
-
-    DB::commit();
-
-    return response()->json(['status' => 'success', 'message' => 'Wallet funded successfully']);
-}
-
-
-private function handleOrderPayment($userId, $amount, $transactionRef)
-{
-    // Find the pending order
-    $order = order::where('user_id', $userId)->where('status', 'pending')->first();
-
-    if (!$order) {
-        return response()->json(['status' => 'error', 'message' => 'Order not found'], 400);
-    }
-
-    // Update order payment status
-    DB::beginTransaction();
-
-
-        Payment::create([
-            'order_id' => $order->id,
-            'payment_method' => 'credit_card',
-            'payment_status' => 'completed',
-            'amount' =>   $amount,
-            'transaction_id' =>  $transactionRef
+        // Log the transaction
+        walletTransaction::create([
+            'wallet_id' => $wallet->id,
+            'transaction_id' => $transactionRef,
+            'amount' => $amount,
+            'old_balance' => $oldBalance,
+            'new_balance' => $wallet->balance,
+            'transaction_type' => 'deposit',
+            'status' => 'success',
+            'date' => now(),
         ]);
+
+        DB::commit();
+
+        return response()->json(['status' => 'success', 'message' => 'Wallet funded successfully']);
+    }
+
+
+    private function handleOrderPayment($orderId, $amount, $transactionRef)
+    {
+        // Find the pending order
+        $order = order::where('id', $orderId)->first();
+
+        if (!$order) {
+            return response()->json(['status' => 'error', 'message' => 'Order not found'], 400);
+        }
+
+        // Update order payment status
+        DB::beginTransaction();
+
+        //create or update the order payment
+        // Payment::create([
+        //     'order_id' => $order->id,
+        //     'payment_method' => 'credit_card',
+        //     'payment_status' => 'completed',
+        //     'amount' =>   $amount,
+        //     'transaction_id' =>  $transactionRef
+        // ]);
+
+         //create or update the order payment
+        $payment = Payment::updateOrCreate(
+            ['order_id' => $order->id, 'transaction_id' => $transactionRef],
+            [
+                'amount' => $amount,
+                'payment_method' => 'credit_card',
+                'payment_status' => 'completed',
+            ]
+        );
 
         //Items Delivery settings
         foreach ($order->items as $orderItem) {
@@ -187,30 +301,34 @@ private function handleOrderPayment($userId, $amount, $transactionRef)
             $shippingstatus->save();
 
 
+                     $product = Product::find($orderItem->product_id);
+                    // $phone = vendBusiness::find($product->user_id)->phone;
+                    $email = User::find($product->user_id)->email;
 
-            //notifica product owner about the order
+                    //send notification to the vendor
+                    Mail::to($email)->send(new Templete(
+                        'You just sold a '  . $product->name . ' in Hibgreenbox',
+                        'You made A Sale',
+                        'You Just Got an Order',
+                        'Thank you for choosing us!',
+                        'Check Order',
+                        'https://greenbox.com'
+                    ));
 
-            $product = product::find($orderItem->product_id);
-            $phone = vendBusiness::find($product->user_id)->phone;
-            notification::create([
-                'user_id' => $product->user_id,
-                'data' => "Your product '" . $product->name . "' has been purchased. Start preparing for delivery!",
-            ]);
+                    //send order summary user
+                    Mail::to($order->user->email)->send( new OrderSuccess($order));
+
+                    //send notification to the vendor
+                    notification::create([
+                        'user_id' => $product->user_id,
+                        'data' => "Your product '" . $product->name . "' has been purchased. Start preparing for delivery!",
+                    ]);
+
+
+
         }
 
-        //Placed
-        $status = new  trackOrder();
-        $status->status = 'order placed';
-        $status->date = Carbon::now();
-        $status->order_id = $order->id;
-        $status->save();
 
-        //Placed
-        $status = new  trackOrder();
-        $status->status = 'pending confirmation';
-        $status->date = Carbon::now();
-        $status->order_id = $order->id;
-        $status->save();
 
         $status = new  trackOrder();
         $status->status = 'on delivery';
@@ -218,9 +336,8 @@ private function handleOrderPayment($userId, $amount, $transactionRef)
         $status->order_id = $order->id;
         $status->save();
 
-    DB::commit();
+        DB::commit();
 
-    return response()->json(['status' => 'success', 'message' => 'Order payment confirmed']);
-}
-
+        return response()->json(['status' => 'success', 'message' => 'Order payment confirmed']);
+    }
 }

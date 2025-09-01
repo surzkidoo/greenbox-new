@@ -151,5 +151,11 @@ class User extends Authenticatable
         return $this->hasOne(wallet::class);
     }
 
+    //subscription relationship
+    public function subscriptions()
+    {
+        return $this->hasMany(subscriptionUser::class);
+    }
+
 
 }

@@ -11,6 +11,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 
 class UserController extends Controller
 {
@@ -110,6 +112,11 @@ class UserController extends Controller
              ->count();
 
 
+             $totalPending = DB::table('orders')
+             ->whereIn('status', ['pending'])->where('user_id',$userId)
+             ->count();
+
+
              $totalCancelled = DB::table('orders')
              ->whereIn('status', ['cancelled'])->where('user_id',$userId)
              ->count();
@@ -125,7 +132,7 @@ class UserController extends Controller
         // Query orders based on user ID and the provided statuses
         $orders = order::where('user_id', $userId)
             ->whereIn('status', $statuses)
-            ->with(['items.product.user','items.product.user.vendBusiness','items.shipping','billingAddress', 'shippingAddress', 'payment'])
+            ->with(['items.product.user','items.product.images','items.product.user.vendBusiness','items.shipping','billingAddress', 'shippingAddress', 'payment'])
             ->paginate(10); // Adjust the pagination count as needed
 
         return response()->json([
@@ -134,11 +141,63 @@ class UserController extends Controller
                 'total_delivered'=>$totalDelivered,
                 'total_cancelled'=>$totalCancelled,
                 'total_products_bought' => $totalProductsBought,
+                'total_pending' => $totalPending,
                 'orders'=>$orders
             ],
         ]);
 
     }
+
+
+    public function updateUserInfo(Request $request, $id)
+{
+    // Validation rules for user information
+    $rules = [
+        'firstname' => 'nullable|string|max:255',
+        'lastname' => 'nullable|string|max:255',
+        'phone' => 'nullable|string|max:20',
+        'address' => 'nullable|string',
+        'occupation' => 'nullable|string',
+        'state' => 'nullable|string',
+        'lga' => 'nullable|string',
+        'gender' => 'nullable|in:male,female,other',
+        'avatar' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:2048',
+    ];
+
+    // Validate request data
+    $validator = Validator::make($request->all(), $rules);
+
+    if ($validator->fails()) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Validation failed',
+            'errors' => $validator->errors(),
+        ], 422);
+    }
+
+    $validated = $validator->validated();
+    $user = User::findOrFail($id);
+
+     if ($request->hasFile('avatar')) {
+          if ($user->avatar) {
+            Storage::delete($user->avatar);
+        }
+            $image2 = $request->file('avatar');
+            $imageName2 = time() . '.' . $image2->getClientOriginalExtension();
+            $image2->move(public_path('images/avatar'), $imageName2);
+            $validated['avatar'] = 'images/avatar/' . $imageName2;
+        }
+
+
+    // Update user information
+    $user->update($validated);
+
+    return response()->json([
+        'status' => 'success',
+        'message' => 'User updated successfully',
+        'user' => $user,
+    ], 200);
+}
 
 
     //   public function getStore(Request $request , $userId): JsonResponse

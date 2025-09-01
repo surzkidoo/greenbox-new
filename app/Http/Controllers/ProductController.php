@@ -243,7 +243,7 @@ class ProductController extends Controller
         if ($user->seller_verified == false) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'please Register as a vendor to Start Selling!!!',
+                'message' => 'please Register as a vendor to Start Selling!',
             ], 400);
         }
 
@@ -352,21 +352,32 @@ class ProductController extends Controller
         // Fetch the product to be updated
         $product = Product::find($id);
 
+
+        if (empty(array_filter($request->all()))) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Invalid Inputs',
+            ], 400);
+        }
+
+
         if (!$product) {
             return response()->json(['status' => 'error', 'message' => 'Product not found'], 404);
         }
 
         $rules = [
-            'name' => 'required|string|max:255',
-            'price' => 'required|numeric',
+            'name' => 'nullable|string|max:255',
+            'price' => 'nullable|numeric',
             'd_price' => 'nullable|numeric',
             'stock_available' => 'nullable|integer',
-            'description' => 'required|string',
-            'weight' => 'required|numeric',
-            'thumbnail' => 'required|numeric',
-            'availability_type' => 'required|in:stock,unlimited',
-            'product_categories_id' => 'required|exists:product_categories,id',
-            'images.*' => 'nullable|image|mimes:jpeg,png,jpg|max:2048', // Multiple images
+            'description' => 'nullable|string',
+            'weight' => 'nullable|numeric',
+            'thumbnail' => 'nullable|numeric',
+            'active' => 'nullable|numeric|in:0,1',
+            'available' => 'nullable|numeric|in:1,0',
+            'availability_type' => 'nullable|in:stock,unlimited',
+            'product_categories_id' => 'nullable|exists:product_categories,id',
+            // 'images.*' => 'nullable|image|mimes:jpeg,png,jpg|max:2048', // Multiple images
         ];
 
 
@@ -382,8 +393,21 @@ class ProductController extends Controller
                   'errors' => $validator->errors(),
               ], 422);
           }
+
           $validated = $validator->validated();
 
+
+
+            if(boolval($product->active)){
+                $validated['active'] = boolval($request->active);
+              }else{
+               unset($validated['active']);
+              }
+
+
+
+        unset($validated['thumbnail']);
+        unset($validated['images']);
 
         // Update the product details
         $product->update([
@@ -393,21 +417,57 @@ class ProductController extends Controller
             'stock_available' => $validated['stock_available'],
             'description' => $validated['description'],
             'weight' => $validated['weight'],
+            'active' => $validated['active'],
+            'available' => $validated['available'],
             'availability_type' => $validated['availability_type'],
             'product_categories_id' => $validated['product_categories_id'],
-            // Optional: Update the product's URL if the name changes
-            'url' => strtolower(str_replace(' ', '-', $validated['name'])) . '-' . uniqid(),
         ]);
 
 
 
-        // Handle updating images (if any)
-        if ($request->hasFile('images')) {
-            $product->images()->get()->each(function ($image) {
-                Storage::delete(public_path($image->url));
-                $image->delete();
-            });
+        //  if ($request->hasFile('images')) {
+        //     // Step 1: Upload and attach new images
+        //     foreach ($request->file('images') as $index => $image) {
+        //         if ($image->isValid()) {
+        //             $imageName = time() . '_' . uniqid() . '.' . $image->getClientOriginalExtension();
 
+        //             $image->move(public_path('images/products'), $imageName);
+
+        //             // Just store the image, don't set thumbnail yet
+        //             $product->images()->create([
+        //                 'url' => 'images/products/' . $imageName,
+        //                 'thumbnail' => false
+        //             ]);
+        //         }
+        //     }
+
+        //     if($request->thumbnail){
+        //         // Step 2: Reset all thumbnails to false
+        //         $product->images()->update(['thumbnail' => false]);
+
+        //         // Step 3: Fetch all images again (old + new), re-indexed
+        //         $allImages = $product->images()->get()->values(); // Ensure index is 0-based
+
+        //         // Step 4: Set thumbnail to the one at the index from $request->thumbnail
+        //         if (isset($allImages[$request->thumbnail])) {
+        //             $allImages[$request->thumbnail]->update(['thumbnail' => true]);
+        //         }
+        //     }
+
+        // }
+        //update images if provided
+        if ($request->hasFile('images')) {
+            // Delete existing images
+            foreach ($product->images as $image) {
+                $imagePath = public_path($image->url);  // Assuming 'url' stores the image path
+                if (file_exists($imagePath)) {
+                    unlink($imagePath);  // Delete the file from the server
+                }
+            }
+            // Delete the associated images from the database
+            $product->images()->delete();
+
+            // Handle multiple images upload
             foreach ($request->file('images') as $index => $image) {
                 if ($image->isValid()) {
                     $imageName = time() . '_' . uniqid() . '.' . $image->getClientOriginalExtension();
@@ -415,17 +475,18 @@ class ProductController extends Controller
                     // Move file to public/images/products
                     $image->move(public_path('images/products'), $imageName);
 
-                     // Check if the current index matches the thumbnail index
-                     $isThumbnail = ($request->thumbnail == $index);
+                    // Check if the current index matches the thumbnail index
+                    $isThumbnail = ($request->thumbnail == $index);
 
-                     // Store the image path in the product_images table
-                     $product->images()->create([
-                         'url' => 'images/products/' . $imageName,
-                         'thumbnail' => $isThumbnail
-                     ]);
+                    // Store the image path in the product_images table
+                    $product->images()->create([
+                        'url' => 'images/products/' . $imageName,
+                        'thumbnail' => $isThumbnail
+                    ]);
                 }
             }
         }
+
 
 
 

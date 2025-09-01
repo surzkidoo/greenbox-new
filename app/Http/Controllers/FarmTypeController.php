@@ -55,7 +55,7 @@ class FarmTypeController extends Controller
         if ($request->hasFile('farm_url')) {
             $imageName = time() . '.' . $request->file('farm_url')->getClientOriginalExtension();
             $request->file('farm_url')->move(public_path('images/icons'), $imageName);
-            $validated['farm_url'] = $imageName; // Save the correct field
+            $validated['farm_url'] = 'images/icons/'.$imageName; // Save the correct field
         }
 
         $farmType = FarmType::create($validated);
@@ -101,7 +101,7 @@ class FarmTypeController extends Controller
         if ($request->hasFile('farm_url')) {
             $imageName = time() . '.' . $request->file('farm_url')->getClientOriginalExtension();
             $request->file('farm_url')->move(public_path('images/icons'), $imageName);
-            $validated['farm_url'] = $imageName; // Save the correct field
+            $validated['farm_url'] = 'images/icons/'.$imageName; // Save the correct field
         }
 
         $farmType->update($validated);

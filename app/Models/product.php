@@ -7,10 +7,12 @@ use App\Models\productImage;
 use App\Models\productCategory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class product extends Model
 {
     use HasFactory;
+    use SoftDeletes;
 
     protected $guarded = [];
 
@@ -39,11 +41,12 @@ class product extends Model
 public function getPrice()
 {
     // If a discounted price is set and less than the original price, return it.
-    if ($this->d_price > 0 && $this->d_price < $this->getPrice()) {
-        return $this->d_price;
+    // Check if a discounted price is set and return it if it's less than the original price
+    if ($this->d_price > 0 && $this->d_price < $this->price) {
+        return $this->d_price; // Return the discounted price if valid
     }
 
-    return $this->getPrice();
+    return $this->price; // Re
 }
 
 

@@ -130,6 +130,12 @@ class FisController extends Controller
         // Create the validator instance
         $validator = Validator::make($request->all(), $validationRules);
 
+        $user = User::find(Auth::id());
+        if ($user->fisBio()->exists()) {
+            return response()->json(['status' => 'error', 'message' => 'You already have a Fis record.'], 400);
+        }
+
+
         if ($validator->fails()) {
             // Customize the error response for API requests
             return response()->json([
@@ -264,11 +270,19 @@ class FisController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Record not found'], 404);
         }
 
+
+
         $user->fis_verified = true;
 
         $bio = fis_bio::where('user_id', $id)->first();
+
+         if (!$bio) {
+            return response()->json(['status' => 'error', 'message' => 'Not A Farmer yet'], 404);
+        }
         $bio->status = "activated";
         $bio->save();
+
+
 
 
         //add permissions
@@ -293,7 +307,7 @@ class FisController extends Controller
 
     public function deactivateFarmer($userID)
     {
-        $user = User::where('user_id', $userID)->first();
+        $user = User::where('id', $userID)->first();
         if (!$user) {
             return response()->json(['status' => 'error', 'message' => 'Record not found'], 404);
         }
@@ -305,6 +319,11 @@ class FisController extends Controller
         $user->save();
 
         $bio = fis_bio::where('user_id', $userID)->first();
+
+        if (!$bio) {
+            return response()->json(['status' => 'error', 'message' => 'Not A Farmer yet'], 404);
+        }
+
         $bio->status = "deactivated";
 
         notification::create([
@@ -324,7 +343,7 @@ class FisController extends Controller
 
     public function rejectPending($userID)
     {
-        $user = User::where('user_id', $userID)->first();
+        $user = User::where('id', $userID)->first();
         if (!$user) {
             return response()->json(['status' => 'error', 'message' => 'Record not found'], 404);
         }

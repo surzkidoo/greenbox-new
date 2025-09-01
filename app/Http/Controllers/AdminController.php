@@ -9,6 +9,7 @@ use App\Models\orderItems;
 use App\Models\permission;
 use Illuminate\Support\Str;
 use Illuminate\Http\Request;
+use App\Models\subscriptionPlan;
 use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Hash;
@@ -255,6 +256,8 @@ class AdminController extends Controller
         // Save the referral code in the database, for example, in the `users` table
         $user->referral_code = $referralCode;
 
+        $user->role = 'admin';
+
         if ($request->hasFile('avatar')) {
             $image = $request->file('avatar');
             $imageName = time() . '.' . $image->getClientOriginalExtension();
@@ -265,14 +268,14 @@ class AdminController extends Controller
 
         $user->save();
 
-        Mail::to($request->email)->send(new Templete(
-            'Your Admin account is created! email : '.$request->email . 'password'. $request->password,
-            'Welcome to HiBGreenbox',
-            'Account Created',
-            'Thank you for choosing us!',
-            'Get Started',
-            'https://app.hibgreenbox.com'
-        ));
+        // Mail::to($request->email)->send(new Templete(
+        //     'Your Admin account is created! email : '.$request->email . 'password'. $request->password,
+        //     'Welcome to HiBGreenbox',
+        //     'Account Created',
+        //     'Thank you for choosing us!',
+        //     'Get Started',
+        //     'https://app.hibgreenbox.com'
+        // ));
 
         $access = explode(',', $request->access_type);
         $permissions = permission::whereIn('access_type', $access)->pluck('id');
@@ -302,6 +305,7 @@ class AdminController extends Controller
             'data' => $adminUsers
         ], 200);
     }
+
 
     public function editAdminPermission(Request $request, $userId)
     {
@@ -379,83 +383,116 @@ class AdminController extends Controller
 
         public function startUpData(){
 
-            Permission::create([
+            permission::create([
                 'name' => 'greenbox management',
                 'access_type' => 'greenbox',
                 'role_for' => 'admin',
             ]);
 
-            Permission::create([
+            permission::create([
                 'name' => 'fis management',
                 'access_type' => 'fis',
                 'role_for' => 'admin',
             ]);
 
-            Permission::create([
+            permission::create([
                 'name' => 'delete_posts',
                 'access_type' => 'chats',
                 'role_for' => 'admin',
             ]);
 
 
-            Permission::create([
+            permission::create([
                 'name' => 'support',
                 'access_type' => 'support',
                 'role_for' => 'admin',
             ]);
 
 
-            Permission::create([
+            permission::create([
                 'name' => 'mails',
                 'access_type' => 'mails',
                 'role_for' => 'admin',
             ]);
 
-            Permission::create([
+            permission::create([
                 'name' => 'updates',
                 'access_type' => 'updates',
                 'role_for' => 'admin',
             ]);
 
 
-            Permission::create([
+            permission::create([
                 'name' => 'user mangement',
                 'access_type' => 'management',
                 'role_for' => 'admin',
             ]);
 
-            Permission::create([
+            permission::create([
                 'name' => 'Farm Management',
                 'role_for' => 'user',
             ]);
 
-            Permission::create([
+            permission::create([
                 'name' => 'HiB greenpay',
                 'role_for' => 'user',
             ]);
 
-            Permission::create([
+            permission::create([
                 'name' => 'Verified Account',
                 'role_for' => 'user',
             ]);
 
-            Permission::create([
+            permission::create([
                 'name' => 'Manage Sales',
                 'role_for' => 'user',
             ]);
 
-            Permission::create([
+            permission::create([
                 'name' => 'Track Profits and Analytics',
                 'role_for' => 'user',
             ]);
 
-            Permission::create([
+            permission::create([
                 'name' => 'Accesibility and to HiB logistics',
                 'role_for' => 'user',
             ]);
 
-            $user = User::where('id','1')->first();
-            $user->permissions()->attach([1,2,3,4,5,6]);
+
+
+
+            // $user = User::where('id','1')->first();
+            // $user->permissions()->attach([1,2,3,4,5,6]);
+
+
+            //initial subscription plans
+            subscriptionPlan::create([
+                'plan_name' => 'seller',
+                'price' => 1060,
+                'description' => 'Seller monthly subscription plan',
+                'billing_cycle' => 'monthly',
+            ]);
+
+            subscriptionPlan::create([
+                'plan_name' => 'seller',
+                'price' => 12560,
+                'description' => 'Seller yearly subscription plan',
+                'billing_cycle' => 'yearly',
+            ]);
+
+            subscriptionPlan::create([
+                'plan_name' => 'farmer',
+                'price' => 1060,
+                'description' => 'Farmer monthly subscription plan',
+                'billing_cycle' => 'monthly',
+            ]);
+
+            subscriptionPlan::create([
+                'plan_name' => 'farmer',
+                'price' => 12560,
+                'description' => 'Farmer yearly subscription plan',
+                'billing_cycle' => 'yearly',
+            ]);
 
         }
 

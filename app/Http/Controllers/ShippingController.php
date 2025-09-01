@@ -13,6 +13,7 @@ use App\Models\trackShipping;
 use App\Models\walletTransaction;
 use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
+use App\Models\order;
 use Illuminate\Support\Facades\Validator;
 
 class ShippingController extends Controller
@@ -139,7 +140,7 @@ class ShippingController extends Controller
         $product = product::where('id',$shipping->item->product_id)->first();
         $id = $shipping->item->order->user_id;
 
-        Notification::create([
+        notification::create([
             'user_id' => $id,
             'data' => "Your order  '" . $product->name . "' is now " . $validated['status'] . "!",
         ]);
@@ -147,8 +148,33 @@ class ShippingController extends Controller
         if($validated['status'] == "delivered"){
 
 
-            DB::beginTransaction();
-            $wallet = wallet::where('user_id', $shipping->logistic_id)->first();
+            // DB::beginTransaction();
+            // // Handle the wallet balance for the logistic
+            // $wallet = wallet::where('user_id', $shipping->logistic_id)->first();
+            // $wallet->update([
+            //     'balance' => $shipping->item->vendor_commision,
+            // ]);
+
+            // // Log the wallet transaction
+            // walletTransaction::create([
+            //     'old_balance' => $wallet->balance,
+            //     'new_balance' =>  $wallet->balance + $shipping->item->vendor_commision,
+            //     'amount' => $shipping->item->vendor_commision,
+            //     'transaction_id' => $shipping->item->id,
+            //     'transaction' => 'Delivery Payout ID:-' . $shipping->id,
+            //     'transaction_type' => 'Deposit',
+            //     'status' => 'success',
+            //     'date' => now(),
+            //     'wallet_id' => $wallet->id,
+            // ]);
+
+            //Handle the vendor's wallet balance
+
+            $product = product::where('id',$shipping->item->product_id)->first();
+
+            $wallet = wallet::where('user_id', $product->user_id)->first();
+            // Update the vendor's wallet balance
+
             $wallet->update([
                 'balance' => $shipping->item->vendor_commision,
             ]);
@@ -156,13 +182,16 @@ class ShippingController extends Controller
             // Log the wallet transaction
             walletTransaction::create([
                 'old_balance' => $wallet->balance,
-                'new_balance' =>  $wallet->balance + $shipping->item->vendor_commision,
-                'amount' => $shipping->item->vendor_commision,
+                'new_balance' =>  $wallet->balance + $shipping->item->sub_total,
+                'amount' => $shipping->item->sub_total,
+                'transaction_id' => $shipping->item->id,
+                'transaction' => 'Order Payout ID:-' . $shipping->item->order_id,
                 'transaction_type' => 'Deposit',
                 'status' => 'success',
                 'date' => now(),
                 'wallet_id' => $wallet->id,
             ]);
+
 
 
 
@@ -185,9 +214,181 @@ class ShippingController extends Controller
         return response()->json(['status' => 'success', 'message' => 'Status updated successfully.', 'data' => $shipping]);
     }
 
+        // Change the status of a shipping record
+    public function changeStatusorder(Request $request, $id)
+    {
+        $rules = [
+            'status' => 'required|in:pending,delivered,in-transit,delayed,cancelled',
+        ];
+
+         // Create the validator instance
+         $validator = Validator::make($request->all(), $rules);
+
+         if ($validator->fails()) {
+             // Customize the error response for API requests
+             return response()->json([
+                 'status' => 'error',
+                 'message' => 'Validation failed',
+                 'errors' => $validator->errors(),
+             ], 422);
+         }
+
+         $validated = $validator->validated();
+
+        $order = order::with('items')->find($id);
+
+           if (!$order) {
+            return response()->json(['status' => 'error', 'message' => 'Order not found.'], 404);
+        }
+        //loop
+        foreach ($order->items as $item) {
+            $shipping = shipping::where('item_id', $item->id)->first();
+            if($shipping && $shipping->status === "delivered"){
+                return response()->json(['status' => 'error', 'message' => 'item delivered already.',]);
+            }
+
+            //handle money for the item
+            if ($shipping && $shipping->status !== 'delivered') {
+                $shipping->status = $validated['status'];
+                $shipping->save();
+                $shippingstatus = new  trackShipping();
+                $shippingstatus->status = $validated['status'];
+                $shippingstatus->date = Carbon::now();
+                $shippingstatus->shipping_id = $shipping->id;
+                $shippingstatus->save();
+            }
+
+            //notifica product owner about the order
+            $product = product::where('id', $item->product_id)->first();
+            $id = $item->order->user_id;
+
+            notification::create([
+                'user_id' => $id,
+                'data' => "Your order  '" . $product->name . "' is now " . $validated['status'] . "!",
+            ]);
+
+            if ($validated['status'] == "delivered") {
+                // Handle the vendor's wallet balance
+                $wallet = wallet::where('user_id', $product->user_id)->first();
+                // Update the vendor's wallet balance
+                $wallet->update([
+                    'balance' => $shipping->item->vendor_commision,
+                ]);
+
+                // Log the wallet transaction
+                walletTransaction::create([
+                    'old_balance' => $wallet->balance,
+                    'new_balance' =>  $wallet->balance + $shipping->item->sub_total,
+                    'amount' => $shipping->item->sub_total,
+                    'transaction_id' => $shipping->item->id,
+                    'transaction' => 'Order Payout ID:-' . $shipping->item->order_id,
+                    'transaction_type' => 'Deposit',
+                    'status' => 'success',
+                    'date' => now(),
+                    'wallet_id' => $wallet->id,
+                ]);
+            }
 
 
-    public function getAllShippings(Request $request)
+        }
+
+
+        if($shipping->status === "delivered"){
+            return response()->json(['status' => 'error', 'message' => 'item delivered already.',]);
+        }
+
+        if (!$shipping) {
+            return response()->json(['status' => 'error', 'message' => 'Shipping not found.'], 404);
+        }
+
+        $shipping->status = $validated['status'];
+        $shipping->save();
+
+        $shippingstatus = new  trackShipping();
+        $shippingstatus->status = $validated['status'];
+        $shippingstatus->date = Carbon::now();
+        $shippingstatus->shipping_id = $shipping->id;
+        $shippingstatus->save();
+
+
+        //notifica product owner about the order
+        $product = product::where('id',$shipping->item->product_id)->first();
+        $id = $shipping->item->order->user_id;
+
+        notification::create([
+            'user_id' => $id,
+            'data' => "Your order  '" . $product->name . "' is now " . $validated['status'] . "!",
+        ]);
+
+
+        if($validated['status'] == "delivered"){
+
+
+            // DB::beginTransaction();
+            // // Handle the wallet balance for the logistic
+            // $wallet = wallet::where('user_id', $shipping->logistic_id)->first();
+            // $wallet->update([
+            //     'balance' => $shipping->item->vendor_commision,
+            // ]);
+
+            // // Log the wallet transaction
+            // walletTransaction::create([
+            //     'old_balance' => $wallet->balance,
+            //     'new_balance' =>  $wallet->balance + $shipping->item->vendor_commision,
+            //     'amount' => $shipping->item->vendor_commision,
+            //     'transaction_id' => $shipping->item->id,
+            //     'transaction' => 'Delivery Payout ID:-' . $shipping->id,
+            //     'transaction_type' => 'Deposit',
+            //     'status' => 'success',
+            //     'date' => now(),
+            //     'wallet_id' => $wallet->id,
+            // ]);
+
+            //Handle the vendor's wallet balance
+
+            $product = product::where('id',$shipping->item->product_id)->first();
+
+            $wallet = wallet::where('user_id', $product->user_id)->first();
+            // Update the vendor's wallet balance
+
+            $wallet->update([
+                'balance' => $shipping->item->vendor_commision,
+            ]);
+
+            // Log the wallet transaction
+            walletTransaction::create([
+                'old_balance' => $wallet->balance,
+                'new_balance' =>  $wallet->balance + $shipping->item->sub_total,
+                'amount' => $shipping->item->sub_total,
+                'transaction_id' => $shipping->item->id,
+                'transaction' => 'Order Payout ID:-' . $shipping->item->order_id,
+                'transaction_type' => 'Deposit',
+                'status' => 'success',
+                'date' => now(),
+                'wallet_id' => $wallet->id,
+            ]);
+
+
+            $adminSetting = AdminSettings::first();
+
+            if ($adminSetting && isset($shipping->item)) {
+                $adminMoney = intval($adminSetting->admin_money) + intval($shipping->item->admin_commision);
+                $insuranceMoney = intval($adminSetting->insurance_money) + intval($shipping->item->insurance);
+
+                $adminSetting->update([
+                    'admin_money' => $adminMoney,
+                    'insurance_money' => $insuranceMoney,
+                ]);
+            }
+
+            DB::commit();
+
+        }
+
+        return response()->json(['status' => 'success', 'message' => 'Status updated successfully.', 'data' => $order]);
+    }
+
+     public function getAllShippings(Request $request)
     {
         $status = $request->query('status');
 

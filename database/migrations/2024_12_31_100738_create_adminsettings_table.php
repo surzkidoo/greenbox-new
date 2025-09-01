@@ -14,6 +14,7 @@ return new class extends Migration
         Schema::create('adminsettings', function (Blueprint $table) {
             $table->id();
             $table->string('admin_money')->nullable();
+            $table->boolean('active_subscription')->default(false);
             $table->string('insurance_money')->nullable();
             $table->string('prefer_Currency')->default('Nigerian Naira');
             $table->string('prefer_language')->default('English');

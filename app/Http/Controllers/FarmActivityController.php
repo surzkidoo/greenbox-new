@@ -10,8 +10,9 @@ use Illuminate\Support\Facades\Validator;
 class FarmActivityController extends Controller
 {
     // Display a listing of products
-    public function index()
+    public function index(Request $request)
     {
+        return dd($request->method());
         $farmActs = farmActivity::all();
         return response()->json($farmActs);
     }

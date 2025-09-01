@@ -17,7 +17,7 @@ class Templete extends Mailable
     public $btnValue;
     public $btnUrl;
 
-    public function __construct($message, $header, $subject, $footer, $btnValue = 'Click Here', $btnUrl = null)
+    public function __construct($message, $header, $subject, $footer = '', $btnValue = 'Click Here', $btnUrl = null)
     {
         $this->message = $message;
         $this->header = $header;
@@ -34,7 +34,7 @@ class Templete extends Mailable
                     ->with([
                         'emailMessage' => $this->message,
                         'header' => $this->header,
-                        'footer' => $this->footer,
+                        'footer' => $this->footer ?? "",
                         'btnValue' => $this->btnValue,
                         'btnUrl' => $this->btnUrl
                     ]);

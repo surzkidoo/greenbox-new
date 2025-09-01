@@ -21,6 +21,8 @@ use Illuminate\Support\Facades\Mail;
 use App\Http\Requests\RegisterRequest;
 use Illuminate\Support\Facades\Validator;
 use App\Http\Requests\ResetPasswordRequest;
+use App\Mail\ResetSuccess;
+use App\Mail\WelcomeEmail;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Foundation\Auth\EmailVerificationRequest;
@@ -90,9 +92,29 @@ class AuthController extends Controller
            ]);
 
 
-           $verificationUrl = 'https://app.hibgreenbox.com/email/verify/' . $verificationToken . '?email=' . urlencode($user->email);
+        $verificationUrl = 'https://api.hibgreenbox.com/email/verify/' . $verificationToken . '?email=' . urlencode($user->email);
 
-           Mail::to($user->email)->send(new EmailVerificationMail($verificationUrl));
+        Mail::to($user->email)->send(new EmailVerificationMail($verificationUrl));
+
+        // //create default subscription
+        // $defaultSubscription = [
+        //     'user_id' => $user->id,
+        //     'subscription_plan_id' => 1,
+        //     'status' => 'deactived',
+        //     'start_date' =>  now(),
+        //     'end_date' =>  now(),
+        // ];
+
+        //      $defaultSubscription2 = [
+        //     'user_id' => $user->id,
+        //     'subscription_plan_id' => 3,
+        //     'status' => 'deactived',
+        //     'start_date' =>  now(),
+        //     'end_date' =>  now(),
+        // ];
+
+        // $user->subscriptions()->create($defaultSubscription);
+        // $user->subscriptions()->create($defaultSubscription2);
 
         DB::commit();
         // Return success response
@@ -145,6 +167,7 @@ class AuthController extends Controller
             'humidity' => false,
             'default_shipping' => null,
         ];
+
         setting::create($defaultSetting);
 
         notification::create([
@@ -154,6 +177,12 @@ class AuthController extends Controller
 
 
         DB::commit();
+
+        //redirect to a success page or return a success response
+        Mail::to($user->email)->send(new WelcomeEmail());
+
+        return response()->redirectTo('https://hibgreenbox.com/login')->with('status', 'Email successfully verified. You can now log in.');
+
         return response()->json([
             'status' => 'success',
             'message' => 'Email successfully verified.',
@@ -274,7 +303,8 @@ class AuthController extends Controller
         // Generate a unique token for password reset
         $token = Str::random(60);
 
-        // Save the token in your database or in a password resets table
+        //delete old and  Save the token in your database or in a password resets table
+        DB::table('password_reset_tokens')->where('email', $user->email)->delete();
         DB::table('password_reset_tokens')->insert([
             'email' => $user->email,
             'token' => $token,
@@ -342,6 +372,8 @@ class AuthController extends Controller
 
         // Delete the reset token after password is updated
         DB::table('password_reset_tokens')->where('email', $request->email)->delete();
+
+        Mail::to($user->email)->send(new ResetSuccess());
 
         return response()->json([
             'status' => 'success',

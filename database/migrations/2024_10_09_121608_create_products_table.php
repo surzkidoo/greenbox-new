@@ -27,6 +27,7 @@ return new class extends Migration
             $table->enum('availability_type', ['stock', 'unlimited'])->default('stock');
             $table->foreignId('user_id')->constrained();
             $table->foreignId('product_categories_id')->constrained();
+            $table->softDeletes();
             $table->timestamps();
         });
 

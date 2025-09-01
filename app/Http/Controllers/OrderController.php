@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use Log;
 use Carbon\Carbon;
 use App\Models\cart;
 use App\Models\User;
@@ -11,7 +10,7 @@ use App\Mail\Templete;
 use App\Models\coupon;
 use App\Models\wallet;
 use App\Models\address;
-use App\Models\Payment;
+use App\Models\payment;
 use App\Models\product;
 use App\Models\setting;
 use App\Models\cartItem;
@@ -28,6 +27,7 @@ use App\Services\TwilioService;
 use App\Models\walletTransaction;
 use App\Services\PaystackService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
@@ -43,11 +43,10 @@ class OrderController extends Controller
     protected $twilio;
 
 
-    public function __construct(PaystackService $paystackService,TwilioService $twilio)
+    public function __construct(PaystackService $paystackService, TwilioService $twilio)
     {
         $this->paystackService = $paystackService;
         $this->twilio = $twilio;
-
     }
 
 
@@ -67,7 +66,7 @@ class OrderController extends Controller
         return $value . ' state';
     }
 
-     function getCart(Request $request)
+    function getCart(Request $request)
     {
         if (Auth::check()) {
             // If the user is logged in, get the user's cart or create a new one
@@ -78,10 +77,7 @@ class OrderController extends Controller
                 if ($cart) {
                     $cart->update(['user_id' => $request->user()->id]);
                 }
-
-            }
-
-            else{
+            } else {
                 $cart = Cart::where('user_id', $request->user()->id)->first();
                 if (!$cart) {
                     $session_id = Str::random(12);
@@ -90,17 +86,15 @@ class OrderController extends Controller
                         'session_id' => $session_id
                     ]);
                 }
-
             }
 
 
             return $cart;
-
         } else {
             // If the user is a guest, use the session to track the cart
-            if($request->session_id){
+            if ($request->session_id) {
                 $session_id = $request->session_id;
-            }else{
+            } else {
                 $session_id = Str::random(12);
             }
 
@@ -110,6 +104,8 @@ class OrderController extends Controller
 
     public function checkout(Request $request)
     {
+        try {
+
         // Fetch the cart for the user
         $cart = $this->getCart($request);
 
@@ -215,6 +211,10 @@ class OrderController extends Controller
             ],
             'message' => 'Checkout Summary',
         ], 200);
+        } catch (\Exception $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage(), 'stack' => $e->getTraceAsString()], 500);
+        }
+
     }
 
 
@@ -240,17 +240,17 @@ class OrderController extends Controller
             'payment.method' => 'required|in:credit_card,bank_transfer,greenpay',
         ];
 
-          // Create the validator instance
-          $validator = Validator::make($request->all(), $rules);
+        // Create the validator instance
+        $validator = Validator::make($request->all(), $rules);
 
-          if ($validator->fails()) {
-              // Customize the error response for API requests
-              return response()->json([
-                  'status' => 'error',
-                  'message' => 'Validation failed',
-                  'errors' => $validator->errors(),
-              ], 422);
-          }
+        if ($validator->fails()) {
+            // Customize the error response for API requests
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
 
         $validated = $validator->validated();
 
@@ -269,30 +269,33 @@ class OrderController extends Controller
 
 
         // Determine billing address based on user's selection
-        $billingAddressID = $request->same_billing ? $order->shipping_address_id : Address::create([
-            'user_id' => $userId,
-            'firstname' => $request->billing['firstname'],
-            'lastname' => $request->billing['lastname'],
-            'address' => $request->billing['address'],
-            'street_address' => $request->billing['s_address'],
-            'city' => $request->billing['city'],
-            'lga' => $request->billing['lga'],
-            'state' => $request->billing['state'],
-            'zip_code' => $request->billing['zip_code'],
-            'country' => $request->billing['country'],
-        ])->id;
+        // $billingAddressID = $request->same_billing ? $order->shipping_address_id : Address::create([
+        //     'user_id' => $userId,
+        //     'firstname' => $request->billing['firstname'],
+        //     'lastname' => $request->billing['lastname'],
+        //     'address' => $request->billing['address'],
+        //     'street_address' => $request->billing['s_address'],
+        //     'city' => $request->billing['city'],
+        //     'lga' => $request->billing['lga'],
+        //     'state' => $request->billing['state'],
+        //     'zip_code' => $request->billing['zip_code'],
+        //     'country' => $request->billing['country'],
+        // ])->id;
 
         // Update order with addresses
         $order->update([
             'note' => $request->shipping_note,
-            'type' =>$request->type,
+            'type' => $request->type,
             'shipping_method' => $request->shipping_type,
-            'billing_address_id' => $billingAddressID,
+            'billing_address_id' => null,
             'landmark_id' => $request->landmark_id ?? null,
-            'status'=>'pending'
+            'status' => 'pending'
         ]);
 
         trackOrder::where('order_id', $order->id)->delete();
+
+        Log::info('Payment method!', $validated ?? 'No payment method provided');
+
 
         // Handle payment (as before)
         if ($request->payment['method'] === 'greenpay') {
@@ -314,7 +317,6 @@ class OrderController extends Controller
                 'balance' => $newBalance,
             ]);
 
-
             // Log the wallet transaction
             walletTransaction::create([
                 'old_balance' => $oldBalance,
@@ -329,7 +331,7 @@ class OrderController extends Controller
             DB::commit();
 
             // Create a payment record
-            Payment::create([
+            payment::create([
                 'order_id' => $order->id,
                 'payment_method' => 'greenpay',
                 'transaction_id' => "PY-" . $this->generateUniqueCode(),
@@ -356,13 +358,11 @@ class OrderController extends Controller
 
                 //notifica product owner about the order
                 $product = Product::find($orderItem->product_id);
-                $phone = vendBusiness::find($product->user_id)->phone;
+                // $phone = vendBusiness::find($product->user_id)->phone;
                 notification::create([
-                        'user_id' => $product->user_id,
-                        'data' => "Your product '" . $product->name . "' has been purchased. Start preparing for delivery!",
+                    'user_id' => $product->user_id,
+                    'data' => "Your product '" . $product->name . "' has been purchased. Start preparing for delivery!",
                 ]);
-
-
             }
 
             $status = new  trackOrder();
@@ -383,6 +383,9 @@ class OrderController extends Controller
             $status->order_id = $order->id;
             $status->save();
 
+            $order->status = 'on_delivery';
+            $order->save();
+
         } else if ($request->payment['method'] === 'credit_card') {
 
             $paystackResponse = Http::withHeaders([
@@ -392,10 +395,10 @@ class OrderController extends Controller
             if ($paystackResponse->successful() && $paystackResponse->json('data')['status'] === 'success') {
                 $amount = $paystackResponse->json('data')['amount'] / 100;
 
-                Payment::create([
+                payment::create([
                     'order_id' => $order->id,
                     'payment_method' => 'credit_card',
-                    'payment_status' => 'completed',
+                    'payment_status' => 'pending',
                     'amount' =>   $amount,
                     'transaction_id' =>  $request->payment['ref']
                 ]);
@@ -420,23 +423,20 @@ class OrderController extends Controller
                     //notifica product owner about the order
 
                     $product = Product::find($orderItem->product_id);
-                    $phone = vendBusiness::find($product->user_id)->phone;
+                    // $phone = vendBusiness::find($product->user_id)->phone;
                     $email = User::find($product->user_id)->email;
 
 
-                    Mail::to($email)->send(new Templete(
-                        'You just sold a '  . $product->name . ' in Hibgreenbox' ,
-                        'You made A Sale',
-                        'You Just Got an Order',
-                        'Thank you for choosing us!',
-                        'Check Order',
-                        'https://greenbox.com'
-                    ));
+                    // Mail::to($email)->send(new Templete(
+                    //     'You just sold a '  . $product->name . ' in Hibgreenbox',
+                    //     'You made A Sale',
+                    //     'You Just Got an Order',
+                    //     'Thank you for choosing us!',
+                    //     'Check Order',
+                    //     'https://greenbox.com'
+                    // ));
 
-                    notification::create([
-                        'user_id' => $product->user_id,
-                        'data' => "Your product '" . $product->name . "' has been purchased. Start preparing for delivery!",
-                    ]);
+
                 }
 
                 //Placed
@@ -453,18 +453,13 @@ class OrderController extends Controller
                 $status->order_id = $order->id;
                 $status->save();
 
-                $status = new  trackOrder();
-                $status->status = 'on delivery';
-                $status->date = Carbon::now();
-                $status->order_id = $order->id;
-                $status->save();
 
             } else {
                 return response()->json(['status' => 'error', 'message' => 'Payment verification failed'], 400);
             }
         } elseif ($request->payment['method'] === 'bank_transfer') {
 
-            Payment::create([
+            payment::create([
                 'order_id' => $order->id,
                 'payment_method' => 'bank_transfer',
                 'payment_status' => 'pending',
@@ -507,18 +502,18 @@ class OrderController extends Controller
             'order_id' => 'required|integer',
         ];
 
-          // Create the validator instance
-          $validator = Validator::make($request->all(), $rules);
+        // Create the validator instance
+        $validator = Validator::make($request->all(), $rules);
 
-          if ($validator->fails()) {
-              // Customize the error response for API requests
-              return response()->json([
-                  'status' => 'error',
-                  'message' => 'Validation failed',
-                  'errors' => $validator->errors(),
-              ], 422);
-          }
-          $validated = $validator->validated();
+        if ($validator->fails()) {
+            // Customize the error response for API requests
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+        $validated = $validator->validated();
 
 
         $order = Order::find($request->order_id);
@@ -615,17 +610,114 @@ class OrderController extends Controller
         ]);
     }
 
+    //change order status
+    // public function changeOrderStatus(Request $request, $id)
+    // {
+    //     // ['in-complete','pending', 'completed', 'on_delivery', 'delivered', 'cancelled','refund','refunded','ended']
+    //     $rules = [
+    //         'status' => 'required|in:in-complete,pending,completed,on_delivery,delivered,cancelled,refund,refunded,ended',
+    //     ];
+    //     // Create the validator instance
+    //     $validator = Validator::make($request->all(), $rules);
+    //     if ($validator->fails()) {
+    //         // Customize the error response for API requests
+    //         return response()->json([
+    //             'status' => 'error',
+    //             'message' => 'Validation failed',
+    //             'errors' => $validator->errors(),
+    //         ], 422);
+    //     }
+    //     $validated = $validator->validated();
 
-     // Admin Approve Payment
-     public function approvePayment($id)
-     {
-         $order = order::find($id);
+    //     $order = order::find($id);
 
-         if (!$order) {
+    //     if (!$order) {
+    //         return response()->json(['status' => 'error', 'message' => 'Order not found'], 404);
+    //     }
+
+    //     $order->status = $request->input('status');
+    //     $order->save();
+
+    //     // Create a new trackOrder entry for the status change
+    //     if($order->status === "delivered"){
+    //         return response()->json(['status' => 'error', 'message' => 'item delivered already.',]);
+    //     }
+
+    //     $id = $order->user_id;
+
+    //     notification::create([
+    //         'user_id' => $id,
+    //         'data' => "Your order  '" . $order->id . "' is now " . $order->status . "!",
+    //     ]);
+
+    //     //SEND NOTIFICATION TO SELLER LOOP
+    //     foreach ($order->items as $orderItem) {
+    //         $product = product::where('id', $orderItem->product_id)->first();
+    //         $sellerId = $product->user_id;
+
+    //         notification::create([
+    //             'user_id' => $sellerId,
+    //             'data' => "Your product  '" . $product->name . "' is now " . $order->status . "!",
+    //         ]);
+
+    //     }
+    //        if($validated['status'] == "delivered"){
+
+    //         //Handle the vendor's wallet balance
+
+
+    //         $wallet = wallet::where('user_id', $product->user_id)->first();
+    //         // Update the vendor's wallet balance
+
+    //         $wallet->update([
+    //             'balance' => $shipping->item->vendor_commision,
+    //         ]);
+
+    //         // Log the wallet transaction
+    //         walletTransaction::create([
+    //             'old_balance' => $wallet->balance,
+    //             'new_balance' =>  $wallet->balance + $shipping->item->sub_total,
+    //             'amount' => $shipping->item->sub_total,
+    //             'transaction_id' => $shipping->item->id,
+    //             'transaction' => 'Order Payout ID:-' . $shipping->item->order_id,
+    //             'transaction_type' => 'Deposit',
+    //             'status' => 'success',
+    //             'date' => now(),
+    //             'wallet_id' => $wallet->id,
+    //         ]);
+
+
+
+
+    //         $adminSetting = AdminSettings::first();
+
+    //         if ($adminSetting && isset($shipping->item)) {
+    //             $adminMoney = intval($adminSetting->admin_money) + intval($shipping->item->admin_commision);
+    //             $insuranceMoney = intval($adminSetting->insurance_money) + intval($shipping->item->insurance);
+
+    //             $adminSetting->update([
+    //                 'admin_money' => $adminMoney,
+    //                 'insurance_money' => $insuranceMoney,
+    //             ]);
+    //         }
+
+    //         DB::commit();
+
+    //     }
+
+    //     return response()->json(['status' => 'success', 'message' => 'Order status updated successfully']);
+    // }
+
+    // Admin Approve Payment
+    public function approvePayment($id)
+    {
+        $order = order::find($id);
+
+        if (!$order) {
             return response()->json(['status' => 'error', 'message' => 'Order not found'], 404);
         }
 
-         $payment = Payment::where('order_id',$id)->first();
+        $payment = payment::where('order_id', $id)->first();
 
         $payment->payment_status = "completed";
         $payment->save();
@@ -634,7 +726,7 @@ class OrderController extends Controller
         $userEmail = $order->user->email;
 
         Mail::to($userEmail)->send(new Templete(
-            'Your Payment has been confirm for order '  . $order->id . ' we processing to shipping' ,
+            'Your Payment has been confirm for order '  . $order->id . ' we processing to shipping',
             'Order Confirmed',
             'Order Confirmation',
             'Thank you for choosing us!',
@@ -643,7 +735,7 @@ class OrderController extends Controller
         ));
 
 
-        //  Payment::create([
+        //  payment::create([
         //     'order_id' => $order->id,
         //     'payment_method' => 'credit_card',
         //     'payment_status' => 'completed',
@@ -676,7 +768,7 @@ class OrderController extends Controller
 
 
             Mail::to($email)->send(new Templete(
-                'You just sold a '  . $product->name . '  in Hibgreenbox' ,
+                'You just sold a '  . $product->name . '  in Hibgreenbox',
                 'You made A Sale',
                 'You Just Got an Order',
                 'Thank you for choosing us!',
@@ -712,11 +804,11 @@ class OrderController extends Controller
         $status->save();
 
 
-         return response()->json([
-             'status' => 'success',
-             'order' => $order,
-         ]);
-     }
+        return response()->json([
+            'status' => 'success',
+            'order' => $order,
+        ]);
+    }
 
 
     // List all orders for a user
@@ -735,7 +827,7 @@ class OrderController extends Controller
 
         // Query orders based on user ID and the provided statuses
         $orders = order::whereIn('status', $statuses)
-            ->with(['items.product.user', 'items.product.user.vendBusiness', 'items.shipping', 'billingAddress', 'shippingAddress', 'payment'])
+            ->with(['items.product.user', 'items.product.user.vendBusiness', 'items.product.images', 'items.shipping', 'billingAddress', 'shippingAddress', 'payment'])
             ->paginate(10); // Adjust the pagination count as needed
 
 
@@ -784,7 +876,7 @@ class OrderController extends Controller
 
         // Query orders based on user ID and the provided statuses
         $orders = order::whereIn('status', $statuses)
-            ->with(['items.product.user', 'items.product.user.vendBusiness', 'items.shipping', 'billingAddress', 'shippingAddress', 'payment'])
+            ->with(['items.product.user','items.product.images', 'items.product.user.vendBusiness', 'items.shipping', 'billingAddress', 'shippingAddress', 'payment'])
             ->paginate(10); // Adjust the pagination count as needed
 
         // Total Invoices
@@ -837,7 +929,7 @@ class OrderController extends Controller
         $orders = order::whereHas('items', function ($query) use ($products) {
             $query->whereIn('product_id', $products);
         })
-            ->with(['items.product.user', 'items.product.user.vendBusiness', 'items.shipping', 'billingAddress', 'shippingAddress', 'payment'])->paginate(10);
+            ->with(['items.product.user','items.product.images', 'items.product.user.vendBusiness', 'items.shipping', 'billingAddress', 'shippingAddress', 'payment'])->paginate(10);
 
         return response()->json([
             'status' => 'success',
@@ -881,15 +973,13 @@ class OrderController extends Controller
                 } else {
                     $weightTier = $this->getWeightTier2($weightKg);
                     $distanceBand = "1 - 99 km";
-
                 }
 
-                return $this->fetchPricing('incity', $distanceBand,'to', $weightTier, $express);
+                return $this->fetchPricing('incity', $distanceBand, 'to', $weightTier, $express);
             }
 
             // For interstate deliveries
             return $this->fetchPricing('pricing', $stateFrom, $stateTo, $weightTier, $express);
-
         } catch (\Exception $e) {
             // Log the error for debugging
 
@@ -912,7 +1002,7 @@ class OrderController extends Controller
             'verify' => false
         ])->get('https://maps.googleapis.com/maps/api/distancematrix/json', [
             'origins' => $lgfrom . ", " . $stateFrom,
-               'destinations' => $lgto . ", " . $stateTo,
+            'destinations' => $lgto . ", " . $stateTo,
             'key' => $apiKey,
         ]);
 
@@ -947,10 +1037,9 @@ class OrderController extends Controller
 
         if ($table == 'incity') {
             $query->whereRaw('LOWER(distance_band_km) = ?', [strtolower($from)]);
-
         } else {
             $query->whereRaw('LOWER(state_from) = ?', [strtolower($from)])
-                  ->whereRaw('LOWER(state_to) = ?', [strtolower($to)]);
+                ->whereRaw('LOWER(state_to) = ?', [strtolower($to)]);
         }
 
         $pricing = $query->first();
@@ -961,14 +1050,13 @@ class OrderController extends Controller
         }
 
 
-        if($table== 'incity'){
+        if ($table == 'incity') {
             return [
                 'delivery_fee' => $express ? $pricing->Express_Prices_2 : $pricing->Standard_Prices_2,
                 'insurance_fee' => $express ? $pricing->Express_Insurance_4 : $pricing->Standard_Insurance_3,
                 'vendor_fee' => $express ? $pricing->Express_Prices : $pricing->Standard_Prices,
                 'admin_fee' => $pricing->Service_Charges,
             ];
-
         }
 
         return [
@@ -1036,7 +1124,7 @@ class OrderController extends Controller
         return '52-100';
     }
 
-   //next featues
+    //next featues
     public function createAndSendOrder(Request $request)
     {
         $validated = $request->validate([
@@ -1083,7 +1171,7 @@ class OrderController extends Controller
                     return response()->json(['status' => 'error', 'message' => 'Pickup address not found'], 404);
                 }
 
-                $useraddress = address::where('id',$validated['shipping']['address_id'])->first();
+                $useraddress = address::where('id', $validated['shipping']['address_id'])->first();
 
                 $shippingData = $this->getPricing($this->convertToState($pickupAddress->state), $this->convertToState($useraddress->state), $item->product->weight * $item['quantity'], $validated['shipping']['type'] === 'express', $pickupAddress->lga, $useraddress->lga);
 
@@ -1117,7 +1205,7 @@ class OrderController extends Controller
                 }
 
                 $wallet->update(['balance' => $wallet->balance - ($total + $totalShippingFee)]);
-                Payment::create([
+                payment::create([
                     'order_id' => $order->id,
                     'payment_method' => 'greenpay',
                     'transaction_id' => "TRX-" . Str::random(8),
@@ -1133,16 +1221,15 @@ class OrderController extends Controller
                     return response()->json(['status' => 'error', 'message' => 'Payment verification failed.'], 400);
                 }
 
-                Payment::create([
+                payment::create([
                     'order_id' => $order->id,
                     'payment_method' => 'credit_card',
                     'transaction_id' => $validated['payment']['ref'],
                     'payment_status' => 'completed',
                     'amount' => $total + $totalShippingFee,
                 ]);
-
             } elseif ($validated['payment']['method'] === 'bank_transfer') {
-                Payment::create([
+                payment::create([
                     'order_id' => $order->id,
                     'payment_method' => 'bank_transfer',
                     'payment_status' => 'pending',

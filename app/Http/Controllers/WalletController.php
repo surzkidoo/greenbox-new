@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Wallet;
-use App\Models\WalletTransaction;
+use App\Models\wallet;
+use App\Models\walletTransaction;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
@@ -15,7 +15,7 @@ class WalletController extends Controller
     // Get wallet for the authenticated user
     public function getWallet(): JsonResponse
     {
-        $wallet = Wallet::where('user_id', Auth::id())->first();
+        $wallet = wallet::where('user_id', Auth::id())->first();
 
         if (!$wallet) {
             return response()->json(['status' => 'error', 'message' => 'Wallet not found.'], 404);
@@ -27,7 +27,7 @@ class WalletController extends Controller
 
     public function getWalletAdmin(Request $request): JsonResponse
     {
-        $query = WalletTransaction::query();
+        $query = walletTransaction::query();
 
         $query->with('wallet.user');
 
@@ -106,14 +106,14 @@ class WalletController extends Controller
 
         $amount = $data['data']['amount'] / 100; // Convert kobo to naira
         $userId = Auth::id();
-        $wallet = Wallet::firstOrCreate(['user_id' => $userId]);
+        $wallet = wallet::firstOrCreate(['user_id' => $userId]);
         $oldBalance = $wallet->balance;
         $newBalance = $oldBalance + $amount;
 
         $wallet->balance = $newBalance;
         $wallet->save();
 
-        WalletTransaction::create([
+        walletTransaction::create([
             'old_balance' => $oldBalance,
             'new_balance' => $newBalance,
             'transaction_type' => 1,
@@ -126,9 +126,9 @@ class WalletController extends Controller
     }
 
     // Get wallet transactions for the authenticated user
-    public function getWalletTransactions(): JsonResponse
+    public function getwalletTransactions(): JsonResponse
     {
-        $wallet = Wallet::where('user_id', Auth::id())->first();
+        $wallet = wallet::where('user_id', Auth::id())->first();
 
         if (!$wallet) {
             return response()->json(['status' => 'error', 'message' => 'Wallet not found.'], 404);

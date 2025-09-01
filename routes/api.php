@@ -32,8 +32,16 @@ use App\Http\Controllers\FarmActivityController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\FarmInventoryController;
 use App\Http\Controllers\LogMessageController;
+use App\Http\Controllers\SubscriptionPlanController;
+use App\Http\Controllers\SubscriptionUserController;
+use App\Models\shipping;
+use App\Models\subscriptionPlan;
 
 //Authentication & Recovery
+Route::get('/', function(){
+    return "API Working";
+}); // Register user //tested
+
 Route::post('/register', [AuthController::class, 'register']); // Register user //tested
 Route::post('/login', [AuthController::class, 'login']);// Login user //tested
 Route::get('/email/verify/{token}', [AuthController::class, 'verifyEmail'])->name('verify.email'); //tested
@@ -53,19 +61,26 @@ Route::get('/products/slug/{slug}', [ProductController::class, 'showBySlug']); /
 Route::get('/states', [GenericController::class, 'getStates']);
 Route::get('/states/{state}/lga', [GenericController::class, 'getLgasByState']);
 
- //Cart System
+
+
+
+ Route::get('/products/marketplace', [ProductController::class, 'marketplace']); //tested
+
+ Route::get('/admin/startup', [AdminController::class, 'startUpData']); //tested
+
+ Route::post('/paystack/webhook', [GenericController::class, 'handleWebhook']);
+
+
+Route::middleware('auth:sanctum')->group(function () {
+
+     //Cart System
  Route::get('/cart', [CartController::class, 'viewCart']); //tested
  Route::post('/cart', [CartController::class, 'addToCart']); //tested
  Route::put('/cart-item/{cartItemId}', [CartController::class, 'updateCartItem']); //tested
  Route::delete('/cart-item/{cartItemId}', [CartController::class, 'removeCartItem']); //tested
 
-
- Route::get('/products/marketplace', [ProductController::class, 'marketplace']); //tested
-
-
-Route::middleware('auth:sanctum')->group(function () {
-
     Route::get('/users', [UserController::class, 'getUsers']); // Add appropriate middleware //tested
+    Route::post('/user/{userId}/update', [UserController::class, 'updateUserInfo']); //tested
     // Route::get('/user', [UserController::class, 'getUser']); //tested
     Route::get('/user/{userId}', [UserController::class, 'getUser']); //tested
     Route::get('/user/{userId}/products', [UserController::class, 'getProductByUser']); //tested
@@ -173,18 +188,18 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/order/placement', [OrderController::class, 'placeOrder']); //tested
     Route::get('/order/{id}', [OrderController::class, 'getOrder']); // Get order details by ID //tested
     Route::get('/order/{id}/approve-transfer-payment', [OrderController::class, 'approvePayment']); // Get order details by ID //tested
-
+    //admin change order status before shipping
+    Route::post('/order/{id}/change-status', [shipping::class, 'changeStatusorder']); // Change order status
 
     //Vendor Seller
     Route::get('/vendor/{userId}/orders', [OrderController::class, 'getOrdersByvendor']); // Get orders for Vendor  //half-test
     Route::post('/vendor', [VendorController::class, 'createVendorRecord']);//tested
     Route::get('/vendor', [VendorController::class, 'getAllVendors']);//tested
-    Route::put('/vendor', [VendorController::class, 'updateVendorRecord']);//tested
+    Route::put('/vendor/{userId}', [VendorController::class, 'updateVendorRecord']);//tested
     Route::get('/vendor/{userId}', [VendorController::class, 'getByUserId']);//tested
     Route::delete('/vendor/{userId}', [VendorController::class, 'deleteVendorRecord']);//tested
     Route::post('/vendor/{userId}/activate', [VendorController::class, 'activateVendor']);//tested
     Route::post('/vendor/{userId}/deactivate', [VendorController::class, 'deactivateVendor']);//tested
-
     Route::get('/vendorsetting/{userId}', [VendorController::class, 'getVendorSetting']);//tested
     Route::put('/vendorsetting/{userId}', [VendorController::class, 'updateVendorSetting']);//tested
 
@@ -196,7 +211,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/wallet/fund', [WalletController::class, 'fundWallet']);
     Route::get('/wallet/paystack-callback', [WalletController::class, 'paystackCallback'])->name('paystack.callback');
     Route::get('/wallet/transactions', [WalletController::class, 'getWalletTransactions']);//tested
-    Route::post('/paystack/webhook', [GenericController::class, 'handleWebhook']);
 
 
 
@@ -318,15 +332,28 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('logistic/{userId}/vehicles', [VehicleController::class, 'index']);//tested
 
 
-        // Route to add a new admin user
-        Route::post('/admin/add', [AdminController::class, 'addAdminUser']); //tested
+    // Route to add a new admin user
+    Route::post('/admin/add', [AdminController::class, 'addAdminUser']); //tested
+    // Route to get all admin users
+    Route::get('admin/users', [AdminController::class, 'getAdminUsers']); //tested
+    // Route to edit admin user permissions
+    Route::put('/admin-permissions/{userId}', [AdminController::class, 'editAdminPermission']); //tested
+    Route::get('/admin/logs', [LogMessageController::class, 'getLogDetails']); //tested
 
-        // Route to get all admin users
-        Route::get('admin/users', [AdminController::class, 'getAdminUsers']); //tested
-        // Route to edit admin user permissions
-        Route::put('/admin-permissions/{userId}', [AdminController::class, 'editAdminPermission']); //tested
 
-        Route::get('/admin/logs', [LogMessageController::class, 'getLogDetails']); //tested
+    //Subscription Route
+    Route::get('/subscription/plans', [SubscriptionPlanController::class, 'index']); // List all subscription plans
+    Route::put('/subscription/plans/{id}', [SubscriptionPlanController::class, 'update']); // Update a subscription plan
+
+    //checkUserSubscription
+    Route::get('/subscription/user/{userid}/check/{planName}', [SubscriptionUserController::class, 'checkUserSubscription']); // Check if user has an active subscription for a plan
+    //activateUserSubscription
+    Route::post('/subscription/user/{userid}/activate/{id}', [SubscriptionUserController::class, 'activateUserSubscription']); // Activate a user's subscription
+    //getUserSubscription
+    Route::get('/subscription/user/{id}', [SubscriptionUserController::class, 'getUserSubscriptionDetails']); // Get user subscription details and payments
 
 
 });
+
+
+//draft some documentation for the API in the README.md file for subscription
